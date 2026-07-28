@@ -56,6 +56,10 @@ docker compose run --rm app
 
 ### B) Python direto
 
+Python 3.12 é a versão recomendada (a mesma da imagem Docker) e 3.10 é o
+mínimo: o `boto3` encerra o suporte a versões anteriores, que deixam de receber
+atualizações de serviço, correções e patches de segurança.
+
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
