@@ -1,4 +1,25 @@
 services:
-  app:
-    build: .
+  backend:
+    build: ./backend
     env_file: .env
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    # O codigo e montado do host: editar um arquivo recarrega o servidor,
+    # sem precisar reconstruir a imagem.
+    volumes:
+      - ./backend:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  frontend:
+    build: ./frontend
+    environment:
+      VITE_API_TARGET: http://backend:8000
+    ports:
+      - "${FRONTEND_PORT:-5173}:5173"
+    volumes:
+      - ./frontend:/app
+      # Volume anonimo: preserva o node_modules instalado na imagem em vez de
+      # deixar o host (que nao tem node_modules) sobrescrever a pasta.
+      - /app/node_modules
+    depends_on:
+      - backend

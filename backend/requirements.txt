@@ -1,0 +1,18 @@
+# O suporte a autenticacao por chave de API do Bedrock via variavel de ambiente
+# AWS_BEARER_TOKEN_BEDROCK foi introduzido em boto3/botocore 1.39.0
+# (verificado: botocore 1.38.46 nao possui o resolvedor de token de ambiente).
+#
+# O piso subiu de 1.42.97 para 1.43.62 porque langchain-aws 1.6.4 exige
+# boto3>=1.43.32. O resolvedor de bearer token continua funcionando.
+boto3==1.43.62
+python-dotenv==1.2.1
+
+# API
+fastapi==0.141.1
+uvicorn[standard]==0.52.1
+
+# LangChain — versoes fixadas de proposito. Sem pin, "pip install langchain-aws"
+# resolve para o que estiver publicado no dia, e o roteiro da aula deixa de ser
+# reproduzivel entre turmas.
+langchain-core==1.5.3
+langchain-aws==1.6.4

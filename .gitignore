@@ -1,3 +1,11 @@
 .env
 __pycache__/
 .venv/
+
+# Frontend
+node_modules/
+dist/
+
+# Material do instrutor — nao vai para a turma
+.claude/
+CLAUDE.md
