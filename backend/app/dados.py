@@ -9,9 +9,11 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
+from uuid import uuid4
 
 PASTA_DE_DADOS = Path(__file__).resolve().parent.parent / "dados"
 ARQUIVO_DE_ATENDIMENTOS = PASTA_DE_DADOS / "atendimentos.jsonl"
+ARQUIVO_DE_SOLICITACOES = PASTA_DE_DADOS / "solicitacoes.jsonl"
 
 
 def _agora() -> str:
@@ -87,3 +89,76 @@ def contar_por_tipo(tipos_conhecidos: list[str]) -> dict:
 def ultimos_atendimentos(quantidade: int = 10) -> list[dict]:
     """Os atendimentos mais recentes, do mais novo para o mais antigo."""
     return list(reversed(_ler_linhas(ARQUIVO_DE_ATENDIMENTOS)))[:quantidade]
+
+
+# ---------------------------------------------------------------------------
+# Fila de trabalho humano
+#
+# Uma fila só, alimentada por caminhos diferentes: o encaminhamento, quando o
+# atendimento não resolve o caso, e a ação executada em nome do cliente. O
+# campo `origem` distingue os dois sem exigir duas listas.
+# ---------------------------------------------------------------------------
+
+
+def _novo_protocolo() -> str:
+    """Identificador curto o suficiente para alguém ditar por telefone."""
+    return "SOL-" + uuid4().hex[:8].upper()
+
+
+def registrar_solicitacao(
+    origem: str,
+    assunto: str,
+    motivo: str,
+    pergunta: str = "",
+    numero_pedido: Optional[str] = None,
+) -> dict:
+    """Coloca um item na fila e devolve o registro criado.
+
+    Nasce sempre como aberta: quem decide que o caso terminou é a pessoa que
+    atende, não o sistema.
+    """
+    solicitacao = {
+        "protocolo": _novo_protocolo(),
+        "quando": _agora(),
+        "origem": origem,
+        "assunto": assunto,
+        "motivo": motivo,
+        "pergunta": pergunta,
+        "numero_pedido": numero_pedido,
+        "situacao": "aberta",
+        "resolvida_em": None,
+    }
+    _acrescentar_linha(ARQUIVO_DE_SOLICITACOES, solicitacao)
+    return solicitacao
+
+
+def listar_solicitacoes() -> list[dict]:
+    """A fila inteira, da mais recente para a mais antiga."""
+    return list(reversed(_ler_linhas(ARQUIVO_DE_SOLICITACOES)))
+
+
+def resolver_solicitacao(protocolo: str) -> Optional[dict]:
+    """Marca um item como resolvido. Devolve None se o protocolo não existir.
+
+    Reescreve o arquivo inteiro porque a linha muda de conteúdo, e o formato de
+    uma linha por registro não permite edição no lugar. Com uma fila de
+    atendimento o custo é irrelevante; num volume maior isto seria um banco.
+    """
+    registros = _ler_linhas(ARQUIVO_DE_SOLICITACOES)
+    alterado = None
+
+    for registro in registros:
+        if registro.get("protocolo") == protocolo:
+            registro["situacao"] = "resolvida"
+            registro["resolvida_em"] = _agora()
+            alterado = registro
+            break
+
+    if alterado is None:
+        return None
+
+    with ARQUIVO_DE_SOLICITACOES.open("w", encoding="utf-8") as destino:
+        for registro in registros:
+            destino.write(json.dumps(registro, ensure_ascii=False) + "\n")
+
+    return alterado

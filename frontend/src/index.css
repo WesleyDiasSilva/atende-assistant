@@ -233,6 +233,61 @@ body {
 }
 .lista-atendimentos .quando { color: var(--tinta-3); font-size: 12px; }
 
+/* ---------- fila de atendimento ---------- */
+.abas .contador {
+  display: inline-block;
+  margin-left: 7px;
+  min-width: 18px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: var(--acento);
+  color: #fff;
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
+}
+
+.fila { list-style: none; display: flex; flex-direction: column; gap: 10px; }
+.fila li {
+  background: var(--superficie);
+  border: 1px solid var(--linha);
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+.fila li.resolvida { opacity: 0.55; }
+
+.linha-topo { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.linha-topo .protocolo { font-size: 12px; font-weight: 700; color: var(--tinta-2); }
+.linha-topo .quando { margin-left: auto; color: var(--tinta-3); font-size: 12px; }
+.linha-topo .chip-tipo { margin-bottom: 0; }
+
+.origem {
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 999px;
+  padding: 3px 10px;
+  border: 1px solid var(--linha);
+  color: var(--tinta-2);
+  background: var(--fundo);
+}
+.origem.troca { color: var(--acento); background: var(--acento-fraco); border-color: var(--acento-fraco); }
+
+.fila .motivo { margin-top: 10px; font-size: 14px; color: var(--tinta); }
+.fila .origem-msg { margin-top: 5px; font-size: 12.5px; color: var(--tinta-3); font-style: italic; }
+
+.resolver {
+  border: 1px solid var(--linha-forte);
+  background: var(--superficie);
+  border-radius: 8px;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--tinta-2);
+  cursor: pointer;
+}
+.resolver:hover { border-color: var(--acento); color: var(--acento); }
+.selo-resolvida { font-size: 11.5px; font-weight: 600; color: var(--tinta-3); }
+
 /* digitando */
 .bolha.digitando { display: inline-flex; gap: 5px; align-items: center; padding: 17px; }
 .bolha.digitando i {

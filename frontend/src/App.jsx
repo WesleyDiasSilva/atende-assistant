@@ -35,6 +35,7 @@ export default function App() {
 
   const [abaAtiva, setAbaAtiva] = useState('conversa')
   const [metricas, setMetricas] = useState(null)
+  const [solicitacoes, setSolicitacoes] = useState(null)
 
   // Recarrega ao abrir o painel: os números mudam a cada mensagem respondida na
   // outra aba, então buscar uma vez só deixaria a tela desatualizada.
@@ -45,6 +46,23 @@ export default function App() {
       .then(setMetricas)
       .catch(() => setMetricas({ total: 0, por_tipo: {}, ultimos: [] }))
   }, [abaAtiva])
+
+  const carregarSolicitacoes = () =>
+    fetch('/api/solicitacoes')
+      .then((r) => r.json())
+      .then(setSolicitacoes)
+      .catch(() => setSolicitacoes({ itens: [], abertas: 0 }))
+
+  useEffect(() => {
+    if (abaAtiva !== 'solicitacoes') return
+    carregarSolicitacoes()
+  }, [abaAtiva])
+
+  // Fechar um item é decisão de quem atende; a tela recarrega para refletir.
+  const resolverSolicitacao = async (protocolo) => {
+    await fetch(`/api/solicitacoes/${protocolo}/resolver`, { method: 'POST' })
+    carregarSolicitacoes()
+  }
 
   const fimDaConversa = useRef(null)
   const campoDeTexto = useRef(null)
@@ -155,6 +173,16 @@ export default function App() {
           >
             Dashboard
           </button>
+          <button
+            type="button"
+            className={abaAtiva === 'solicitacoes' ? 'ativo' : ''}
+            onClick={() => setAbaAtiva('solicitacoes')}
+          >
+            Solicitações
+            {solicitacoes?.abertas > 0 && (
+              <span className="contador">{solicitacoes.abertas}</span>
+            )}
+          </button>
         </nav>
 
         <div className={`estado ${estadoDaApi}`}>
@@ -168,7 +196,53 @@ export default function App() {
       </header>
 
       <main className="corpo">
-        {abaAtiva === 'dashboard' ? (
+        {abaAtiva === 'solicitacoes' ? (
+          <section className="dashboard">
+            <h2 className="secao">Fila de atendimento</h2>
+            {!solicitacoes ? (
+              <p className="vazio">Carregando…</p>
+            ) : solicitacoes.itens.length === 0 ? (
+              <p className="vazio">
+                Nenhuma solicitação na fila. Ela recebe os casos que o atendimento
+                encaminha para uma pessoa resolver.
+              </p>
+            ) : (
+              <ul className="fila">
+                {solicitacoes.itens.map((item) => (
+                  <li
+                    key={item.protocolo}
+                    className={item.situacao === 'resolvida' ? 'resolvida' : ''}
+                  >
+                    <div className="linha-topo">
+                      <span className="protocolo num">{item.protocolo}</span>
+                      {/* A origem diz por qual caminho o caso entrou na fila. */}
+                      <span className={`origem ${item.origem}`}>
+                        {item.origem === 'troca' ? 'Troca aberta' : 'Encaminhado'}
+                      </span>
+                      <span className="chip-tipo">
+                        {NOME_DO_TIPO[item.assunto] || item.assunto}
+                      </span>
+                      <span className="quando num">{formatarHorario(item.quando)}</span>
+                      {item.situacao === 'aberta' ? (
+                        <button
+                          type="button"
+                          className="resolver"
+                          onClick={() => resolverSolicitacao(item.protocolo)}
+                        >
+                          Resolver
+                        </button>
+                      ) : (
+                        <span className="selo-resolvida">Resolvida</span>
+                      )}
+                    </div>
+                    <p className="motivo">{item.motivo}</p>
+                    {item.pergunta && <p className="origem-msg">“{item.pergunta}”</p>}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        ) : abaAtiva === 'dashboard' ? (
           <section className="dashboard">
             <h2 className="secao">Atendimentos por assunto</h2>
             {!metricas ? (

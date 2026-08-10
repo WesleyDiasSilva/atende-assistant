@@ -107,9 +107,38 @@ def responder(pergunta_do_cliente: PerguntaDoCliente):
         modelo=pergunta_do_cliente.modelo,
     )
 
+    # O encaminhamento é uma decisão do modelo, mas quem resolve é uma pessoa:
+    # o caso entra na fila e fica aberto até alguém fechá-lo.
+    if resposta.precisa_de_humano:
+        dados.registrar_solicitacao(
+            origem="encaminhamento",
+            assunto=resposta.tipo.value,
+            motivo=resposta.motivo or "Sem motivo informado.",
+            pergunta=pergunta_do_cliente.pergunta,
+        )
+
     # O retorno é uma instância do schema, não texto: a API devolve os campos e
     # a interface lê cada um pelo nome, sem procurar informação dentro da frase.
     return resposta.model_dump()
+
+
+@app.get("/api/solicitacoes")
+def solicitacoes():
+    """A fila de trabalho humano, com as duas origens na mesma lista."""
+    itens = dados.listar_solicitacoes()
+    return {
+        "itens": itens,
+        "abertas": sum(1 for item in itens if item.get("situacao") == "aberta"),
+    }
+
+
+@app.post("/api/solicitacoes/{protocolo}/resolver")
+def resolver(protocolo: str):
+    """Fecha um item da fila. É a ponta humana do fluxo."""
+    solicitacao = dados.resolver_solicitacao(protocolo)
+    if solicitacao is None:
+        raise HTTPException(status_code=404, detail="Solicitação não encontrada.")
+    return solicitacao
 
 
 @app.get("/api/metricas")
