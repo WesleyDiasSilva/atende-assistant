@@ -153,6 +153,20 @@ def registrar_solicitacao(
     return solicitacao
 
 
+def solicitacao_aberta_para_pedido(numero_pedido: str) -> Optional[dict]:
+    """A solicitação em aberto de um pedido, se houver.
+
+    Impede que a mesma troca entre duas vezes na fila quando o cliente insiste.
+    """
+    for registro in _ler_linhas(ARQUIVO_DE_SOLICITACOES):
+        if (
+            registro.get("numero_pedido") == str(numero_pedido)
+            and registro.get("situacao") == "aberta"
+        ):
+            return registro
+    return None
+
+
 def listar_solicitacoes() -> list[dict]:
     """A fila inteira, da mais recente para a mais antiga."""
     return list(reversed(_ler_linhas(ARQUIVO_DE_SOLICITACOES)))

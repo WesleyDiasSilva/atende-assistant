@@ -7,7 +7,7 @@ para decidir se chama a ferramenta e com quais argumentos.
 """
 from langchain_core.tools import tool
 
-from app import dados
+from app import dados, regras
 
 
 @tool
@@ -67,6 +67,14 @@ def abrir_solicitacao_de_troca(numero_pedido: str, motivo: str) -> str:
             f"Pedido {numero_pedido} nao encontrado. Nenhuma solicitacao foi "
             "aberta."
         )
+
+    # A regra de negócio é verificada aqui, antes de qualquer gravação: quem
+    # decide o que pode acontecer é este código, não o modelo. Se ele pedir
+    # uma troca fora da política, a recusa volta como texto e ele explica o
+    # motivo ao cliente.
+    impedimento = regras.impedimento_para_troca(pedido)
+    if impedimento:
+        return impedimento
 
     solicitacao = dados.registrar_solicitacao(
         origem="troca",
