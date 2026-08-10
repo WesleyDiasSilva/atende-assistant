@@ -51,7 +51,40 @@ def consultar_status_pedido(numero_pedido: str) -> str:
     )
 
 
+@tool
+def abrir_solicitacao_de_troca(numero_pedido: str, motivo: str) -> str:
+    """Abre uma solicitação de troca para um pedido já entregue.
+
+    Use quando o cliente pedir troca ou devolução de um produto que recebeu.
+    O motivo deve descrever, numa frase, o problema relatado pelo cliente.
+    Só chame esta ferramenta quando o cliente pedir a troca de fato — para
+    dúvidas sobre a política, responda sem abrir nada.
+    """
+    pedido = dados.buscar_pedido(numero_pedido)
+
+    if pedido is None:
+        return (
+            f"Pedido {numero_pedido} nao encontrado. Nenhuma solicitacao foi "
+            "aberta."
+        )
+
+    solicitacao = dados.registrar_solicitacao(
+        origem="troca",
+        assunto="troca",
+        motivo=motivo,
+        pergunta=f"Troca do pedido {pedido['numero']} ({pedido['cliente']}).",
+        numero_pedido=pedido["numero"],
+    )
+
+    return (
+        f"Solicitacao de troca aberta para o pedido {pedido['numero']} sob o "
+        f"protocolo {solicitacao['protocolo']}. Informe o protocolo ao cliente "
+        "e avise que a equipe entrara em contato."
+    )
+
+
 # O conjunto é explícito e curto: o modelo só pode chamar o que está aqui, e
 # quanto menor a lista, menor a chance de ele escolher a ferramenta errada.
-FERRAMENTAS = [consultar_status_pedido]
+# Note a diferença entre as duas: uma lê, a outra deixa um registro no sistema.
+FERRAMENTAS = [consultar_status_pedido, abrir_solicitacao_de_troca]
 FERRAMENTAS_POR_NOME = {ferramenta.name: ferramenta for ferramenta in FERRAMENTAS}
