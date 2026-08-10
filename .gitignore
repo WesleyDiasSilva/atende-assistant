@@ -2,6 +2,9 @@
 __pycache__/
 .venv/
 
+# Dados gravados em execucao — a fixture de pedidos continua versionada
+backend/dados/*.jsonl
+
 # Frontend
 node_modules/
 dist/

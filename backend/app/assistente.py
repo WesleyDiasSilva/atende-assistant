@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
-"""A chain do atendente: prompt | model | parser.
+"""A chain do atendente: prompt | model estruturado.
 
-Três peças ligadas pelo operador pipe. O prompt monta as mensagens, o model
-responde, o parser devolve texto puro.
+O prompt monta as mensagens e o model responde preenchendo um formato fixo.
+O parser de texto saiu: quem garante o formato agora é o schema, e a saída já
+chega como objeto validado em vez de string.
 """
 from botocore.exceptions import ClientError
 from langchain_aws import ChatBedrockConverse
-from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 
 from app.config import (
@@ -15,6 +15,7 @@ from app.config import (
     REGIAO_AWS,
     TEMPERATURA_PADRAO,
 )
+from app.schemas import RespostaAtendimento, TipoDeAtendimento
 
 # A mensagem de sistema define quem o atendente é. Tem uma parte fixa (a persona)
 # e uma variável ({instrucao_de_tom}), preenchida com o perfil que o usuário
@@ -33,16 +34,16 @@ prompt = ChatPromptTemplate.from_messages(
     ]
 )
 
-# Converte o AIMessage devolvido pelo modelo em string. É o que faz a chain
-# entregar texto pronto para a API, em vez de um objeto do LangChain.
-parser = StrOutputParser()
-
-
 def montar_chain(modelo: str, temperatura: float):
-    """Liga as três peças com o pipe.
+    """Liga as peças com o pipe.
 
     Montada a cada pergunta porque modelo e temperatura vêm da interface e mudam
-    entre chamadas. Compor uma chain é barato: são três objetos encadeados.
+    entre chamadas. Compor uma chain é barato: são objetos encadeados.
+
+    `with_structured_output` recebe a classe Pydantic e devolve um runnable que
+    entrega uma instância validada. É o mesmo model de antes, com uma exigência
+    de formato a mais — e não depende do fornecedor: o método é do LangChain e
+    usa, por baixo, o recurso nativo do modelo.
     """
     model = ChatBedrockConverse(
         model_id=MODELOS[modelo]["model_id"],
@@ -50,7 +51,7 @@ def montar_chain(modelo: str, temperatura: float):
         temperature=temperatura,
         max_tokens=1024,
     )
-    return prompt | model | parser
+    return prompt | model.with_structured_output(RespostaAtendimento)
 
 
 def responder(
@@ -58,8 +59,8 @@ def responder(
     perfil: str,
     modelo: str,
     temperatura: float = TEMPERATURA_PADRAO,
-) -> str:
-    """Executa a chain e devolve o texto da resposta."""
+) -> RespostaAtendimento:
+    """Executa a chain e devolve a resposta já validada no formato do schema."""
     chain = montar_chain(modelo, temperatura)
     try:
         return chain.invoke(
@@ -72,7 +73,13 @@ def responder(
         # O LangChain não embrulha os erros do Bedrock: eles continuam sendo do
         # botocore, e ClientError é a classe-mãe de todos. Por isso um único
         # except cobre falha de credencial, modelo inválido e acesso negado.
-        return traduzir_erro_do_bedrock(erro, MODELOS[modelo]["model_id"])
+        #
+        # A falha também sai no formato do schema: quem consome a API trata uma
+        # forma só, com erro ou sem erro.
+        return RespostaAtendimento(
+            resposta=traduzir_erro_do_bedrock(erro, MODELOS[modelo]["model_id"]),
+            tipo=TipoDeAtendimento.OUTRO,
+        )
 
 
 def traduzir_erro_do_bedrock(erro: ClientError, model_id: str) -> str:

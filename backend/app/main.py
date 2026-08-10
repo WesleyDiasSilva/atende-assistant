@@ -10,7 +10,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from app import assistente
+from app import assistente, dados
+from app.schemas import TipoDeAtendimento
 from app.config import (
     MODELOS,
     PERFIS_DE_ATENDIMENTO,
@@ -98,4 +99,29 @@ def responder(pergunta_do_cliente: PerguntaDoCliente):
         pergunta_do_cliente.modelo,
         pergunta_do_cliente.temperatura,
     )
-    return {"resposta": resposta}
+    # O campo `tipo` da resposta é o que torna a contagem por assunto possível:
+    # a classificação chega junto com o texto, sem uma segunda chamada ao modelo.
+    dados.registrar_atendimento(
+        tipo=resposta.tipo.value,
+        pergunta=pergunta_do_cliente.pergunta,
+        modelo=pergunta_do_cliente.modelo,
+    )
+
+    # O retorno é uma instância do schema, não texto: a API devolve os campos e
+    # a interface lê cada um pelo nome, sem procurar informação dentro da frase.
+    return resposta.model_dump()
+
+
+@app.get("/api/metricas")
+def metricas():
+    """Contagem de atendimentos por assunto, para o painel.
+
+    Os tipos vêm do enum do schema, então um assunto novo aparece no painel
+    assim que passa a existir no contrato — sem mexer aqui.
+    """
+    resumo = dados.contar_por_tipo([tipo.value for tipo in TipoDeAtendimento])
+    return {
+        "total": resumo["total"],
+        "por_tipo": resumo["por_tipo"],
+        "ultimos": dados.ultimos_atendimentos(),
+    }

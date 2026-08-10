@@ -6,8 +6,18 @@ const PERGUNTAS_DE_EXEMPLO = [
   'Vocês entregam no mesmo dia?',
 ]
 
+// Os valores vêm do enum do schema; aqui ficam só os rótulos de exibição.
+const NOME_DO_TIPO = {
+  status_pedido: 'Status do pedido',
+  troca: 'Troca',
+  duvida_produto: 'Dúvida de produto',
+  outro: 'Outro',
+}
+
 const formatarSegundos = (ms) => `${(ms / 1000).toFixed(1).replace('.', ',')} s`
 const formatarTemperatura = (valor) => valor.toFixed(1).replace('.', ',')
+const formatarHorario = (iso) =>
+  new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
 
 export default function App() {
   // O catálogo de modelos, perfis e faixa de temperatura vem da API — a
@@ -22,6 +32,19 @@ export default function App() {
   const [textoDigitado, setTextoDigitado] = useState('')
   const [conversa, setConversa] = useState([])
   const [aguardandoResposta, setAguardandoResposta] = useState(false)
+
+  const [abaAtiva, setAbaAtiva] = useState('conversa')
+  const [metricas, setMetricas] = useState(null)
+
+  // Recarrega ao abrir o painel: os números mudam a cada mensagem respondida na
+  // outra aba, então buscar uma vez só deixaria a tela desatualizada.
+  useEffect(() => {
+    if (abaAtiva !== 'dashboard') return
+    fetch('/api/metricas')
+      .then((r) => r.json())
+      .then(setMetricas)
+      .catch(() => setMetricas({ total: 0, por_tipo: {}, ultimos: [] }))
+  }, [abaAtiva])
 
   const fimDaConversa = useRef(null)
   const campoDeTexto = useRef(null)
@@ -79,6 +102,9 @@ export default function App() {
           texto: resposta.ok
             ? dados.resposta
             : dados.detail?.[0]?.msg || dados.detail || 'Não foi possível responder.',
+          // Campo do schema, lido pelo nome. É o mesmo valor que alimenta a
+          // contagem por assunto do painel.
+          tipo: resposta.ok ? dados.tipo : null,
           houveErro: !resposta.ok,
           duracaoEmMs: performance.now() - inicio,
           nomeDoModelo: modeloAtual?.nome,
@@ -112,6 +138,25 @@ export default function App() {
             <span>Console de atendimento</span>
           </div>
         </div>
+        {/* A navegação separa o atendimento em si do que o sistema apurou a
+            partir dos campos da resposta. */}
+        <nav className="abas">
+          <button
+            type="button"
+            className={abaAtiva === 'conversa' ? 'ativo' : ''}
+            onClick={() => setAbaAtiva('conversa')}
+          >
+            Conversa
+          </button>
+          <button
+            type="button"
+            className={abaAtiva === 'dashboard' ? 'ativo' : ''}
+            onClick={() => setAbaAtiva('dashboard')}
+          >
+            Dashboard
+          </button>
+        </nav>
+
         <div className={`estado ${estadoDaApi}`}>
           <span className="ponto" aria-hidden="true" />
           {estadoDaApi === 'ok'
@@ -123,6 +168,54 @@ export default function App() {
       </header>
 
       <main className="corpo">
+        {abaAtiva === 'dashboard' ? (
+          <section className="dashboard">
+            <h2 className="secao">Atendimentos por assunto</h2>
+            {!metricas ? (
+              <p className="vazio">Carregando…</p>
+            ) : metricas.total === 0 ? (
+              <p className="vazio">
+                Nenhum atendimento registrado ainda. Responda uma mensagem na aba
+                Conversa para o painel começar a contar.
+              </p>
+            ) : (
+              <>
+                <div className="cartoes">
+                  {Object.entries(metricas.por_tipo).map(([tipo, quantidade]) => (
+                    <div key={tipo} className="cartao">
+                      <span className="rotulo">{NOME_DO_TIPO[tipo] || tipo}</span>
+                      <strong className="num">{quantidade}</strong>
+                      {/* Proporção sobre o total, para comparar assuntos sem
+                          depender só do número absoluto. */}
+                      <div className="barra">
+                        <div
+                          className="preenchimento"
+                          style={{
+                            width: `${metricas.total ? (quantidade / metricas.total) * 100 : 0}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <h2 className="secao">Últimos atendimentos</h2>
+                <ul className="lista-atendimentos">
+                  {metricas.ultimos.map((item, indice) => (
+                    <li key={indice}>
+                      <span className="chip-tipo">
+                        {NOME_DO_TIPO[item.tipo] || item.tipo}
+                      </span>
+                      <span className="pergunta">{item.pergunta}</span>
+                      <span className="quando num">{formatarHorario(item.quando)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </section>
+        ) : (
+          <>
         <section className="conversa">
           <div className="rolagem">
             {conversa.length === 0 ? (
@@ -151,6 +244,11 @@ export default function App() {
                     <span className="autor">
                       {mensagem.autor === 'cliente' ? 'Cliente' : 'Atendente'}
                     </span>
+                    {/* O assunto vem em campo próprio da resposta: a interface o
+                        exibe sem precisar interpretar o texto. */}
+                    {mensagem.tipo && (
+                      <span className="chip-tipo">{NOME_DO_TIPO[mensagem.tipo] || mensagem.tipo}</span>
+                    )}
                     <div className={`bolha ${mensagem.houveErro ? 'erro' : ''}`}>
                       {mensagem.texto}
                     </div>
@@ -287,6 +385,8 @@ export default function App() {
             )}
           </div>
         </aside>
+          </>
+        )}
       </main>
     </div>
   )
