@@ -1,0 +1,52 @@
+{
+  "80412": {
+    "numero": "80412",
+    "cliente": "Ana Moreira",
+    "situacao": "entregue",
+    "entregue_ha_dias": 2,
+    "previsao_em_dias": null,
+    "itens": ["2 kg de hamburguer artesanal", "1 caixa de nuggets"],
+    "valor": 189.9,
+    "prazo_de_troca_em_dias": 7
+  },
+  "80998": {
+    "numero": "80998",
+    "cliente": "Carlos Tavares",
+    "situacao": "entregue",
+    "entregue_ha_dias": 21,
+    "previsao_em_dias": null,
+    "itens": ["1 peca de picanha", "3 kg de file de frango"],
+    "valor": 342.5,
+    "prazo_de_troca_em_dias": 7
+  },
+  "81030": {
+    "numero": "81030",
+    "cliente": "Marina Alves",
+    "situacao": "em transporte",
+    "entregue_ha_dias": null,
+    "previsao_em_dias": 2,
+    "itens": ["5 kg de costela suina"],
+    "valor": 215.0,
+    "prazo_de_troca_em_dias": 7
+  },
+  "81104": {
+    "numero": "81104",
+    "cliente": "Rodrigo Pinto",
+    "situacao": "em separacao",
+    "entregue_ha_dias": null,
+    "previsao_em_dias": 4,
+    "itens": ["2 caixas de pao de queijo", "1 kg de calabresa"],
+    "valor": 98.4,
+    "prazo_de_troca_em_dias": 7
+  },
+  "80877": {
+    "numero": "80877",
+    "cliente": "Juliana Reis",
+    "situacao": "cancelado",
+    "entregue_ha_dias": null,
+    "previsao_em_dias": null,
+    "itens": ["1 kg de bacon em cubos"],
+    "valor": 61.9,
+    "prazo_de_troca_em_dias": 7
+  }
+}

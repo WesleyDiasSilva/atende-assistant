@@ -14,6 +14,7 @@ from uuid import uuid4
 PASTA_DE_DADOS = Path(__file__).resolve().parent.parent / "dados"
 ARQUIVO_DE_ATENDIMENTOS = PASTA_DE_DADOS / "atendimentos.jsonl"
 ARQUIVO_DE_SOLICITACOES = PASTA_DE_DADOS / "solicitacoes.jsonl"
+ARQUIVO_DE_PEDIDOS = PASTA_DE_DADOS / "pedidos.json"
 
 
 def _agora() -> str:
@@ -89,6 +90,26 @@ def contar_por_tipo(tipos_conhecidos: list[str]) -> dict:
 def ultimos_atendimentos(quantidade: int = 10) -> list[dict]:
     """Os atendimentos mais recentes, do mais novo para o mais antigo."""
     return list(reversed(_ler_linhas(ARQUIVO_DE_ATENDIMENTOS)))[:quantidade]
+
+
+# ---------------------------------------------------------------------------
+# Pedidos
+#
+# Substitui o sistema de pedidos que existiria em produção. O tempo é gravado
+# em dias corridos desde a entrega, e não em data absoluta, para que os casos
+# continuem valendo em qualquer dia em que o projeto for executado.
+# ---------------------------------------------------------------------------
+
+
+def buscar_pedido(numero_pedido: str) -> Optional[dict]:
+    """Devolve o pedido pelo número, ou None quando ele não existe."""
+    if not ARQUIVO_DE_PEDIDOS.exists():
+        return None
+
+    with ARQUIVO_DE_PEDIDOS.open(encoding="utf-8") as origem:
+        pedidos = json.load(origem)
+
+    return pedidos.get(str(numero_pedido).strip())
 
 
 # ---------------------------------------------------------------------------
