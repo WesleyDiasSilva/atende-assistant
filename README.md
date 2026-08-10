@@ -3,18 +3,30 @@
 Assistente de atendimento ao cliente para um cenário de e-commerce de produtos
 congelados (pedidos e políticas), construído de forma incremental.
 
-Este estado tem interface e API. O assistente responde no tom escolhido, com o
-modelo escolhido — e ainda não tem acesso a nenhum documento da empresa, então
-não afirma valores, prazos nem políticas.
+Neste estado o assistente responde num formato fixo, classifica o assunto de
+cada mensagem, consulta pedidos por ferramenta e abre solicitações de troca —
+dentro da política, que é verificada no código. O que ele não resolve vai para
+uma fila de atendimento humano. Ele ainda não tem acesso aos documentos da
+empresa, então não é fonte confiável sobre políticas e prazos que não estejam
+no cadastro do pedido.
 
 ## Estrutura
 
 ```
 backend/
   app/
-    main.py         API (FastAPI): /api/saude, /api/configuracao, /api/responder
-    assistente.py   a chain: prompt | model | parser
+    main.py         API (FastAPI): saude, configuracao, responder,
+                    metricas e solicitacoes
+    assistente.py   o ciclo de chamada de ferramenta e a saída estruturada
+    tools.py        ferramentas: consulta de pedido e abertura de troca
+    regras.py       política de troca — a decisão de negócio
+    schemas.py      o contrato da resposta (Pydantic)
+    dados.py        persistência em arquivo
     config.py       catálogo de modelos, perfis e faixa de temperatura
+  dados/
+    pedidos.json        cadastro de pedidos usado pelas ferramentas
+    atendimentos.jsonl  histórico das mensagens respondidas (gerado)
+    solicitacoes.jsonl  fila de trabalho humano (gerado)
   requirements.txt  dependências pinadas
   Dockerfile        imagem baseada em python:3.12-slim
 frontend/           interface em React + Vite (imagem node:22-slim)
