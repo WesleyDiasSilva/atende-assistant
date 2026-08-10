@@ -1,9 +1,20 @@
 # -*- coding: utf-8 -*-
-"""A chain do atendente: prompt | model estruturado.
+"""O atendente: o ciclo de ferramentas e a resposta em formato fixo.
 
-O prompt monta as mensagens e o model responde preenchendo um formato fixo.
-O parser de texto saiu: quem garante o formato agora é o schema, e a saída já
-chega como objeto validado em vez de string.
+Responder a uma pergunta acontece em duas etapas.
+
+1. O ciclo de ferramentas. O modelo recebe a lista do que pode chamar. Se ele
+   pedir uma ferramenta, este arquivo executa a função, devolve o resultado e
+   pergunta de novo — até ele não pedir mais nada. O modelo decide o que
+   chamar; quem executa é este código.
+
+2. O formato. Com a conversa completa em mãos, uma última chamada exige que a
+   resposta venha no formato do schema, e ela chega como objeto validado em vez
+   de texto solto.
+
+As duas etapas são separadas porque `bind_tools` e `with_structured_output`
+usam o mesmo mecanismo por baixo: pedir as duas coisas na mesma chamada é
+frágil.
 """
 import logging
 

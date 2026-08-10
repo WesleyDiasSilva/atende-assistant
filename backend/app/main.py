@@ -1,9 +1,16 @@
 # -*- coding: utf-8 -*-
 """API do atendente de pedidos.
 
-    GET  /api/saude        estado da API
-    GET  /api/configuracao modelos, perfis e faixa de temperatura
-    POST /api/responder    recebe a pergunta e devolve a resposta da chain
+    GET  /api/saude         estado da API
+    GET  /api/configuracao  modelos, perfis e faixa de temperatura
+    POST /api/responder     recebe a pergunta e devolve a resposta em campos
+    GET  /api/metricas      contagem de atendimentos por assunto
+    GET  /api/solicitacoes  fila de trabalho humano
+    POST /api/solicitacoes/{protocolo}/resolver   fecha um item da fila
+
+Responder faz três coisas: pede a resposta ao atendente, registra o
+atendimento para a contagem por assunto e, quando o caso precisa de uma
+pessoa, coloca-o na fila.
 """
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
