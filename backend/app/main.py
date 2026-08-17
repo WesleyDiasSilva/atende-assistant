@@ -12,6 +12,8 @@ Responder faz três coisas: pede a resposta ao atendente, registra o
 atendimento para a contagem por assunto e, quando o caso precisa de uma
 pessoa, coloca-o na fila.
 """
+import logging
+
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -30,6 +32,11 @@ from app.config import (
 
 # Lê o .env da raiz do projeto, onde fica a chave do Bedrock.
 load_dotenv()
+
+# O uvicorn configura só os loggers dele. Sem esta linha o logger raiz fica em
+# WARNING e o `logger.info` da execução de ferramenta não aparece no terminal —
+# justamente a prova de que quem executa a ferramenta é o nosso código.
+logging.basicConfig(level=logging.INFO, format="%(levelname)s:     %(message)s")
 
 app = FastAPI(title="Atendente de Pedidos")
 
