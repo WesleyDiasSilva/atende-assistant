@@ -20,3 +20,10 @@ langchain-aws==1.6.4
 # Postgres. O extra [binary] traz a libpq compilada no wheel: sem ele a
 # instalacao exige pg_config e cabecalhos de C na maquina.
 psycopg[binary]==3.3.4
+
+# Base vetorial e chunking. As duas exigem langchain-core: langchain-postgres
+# aceita <2.0 e langchain-text-splitters exige >=1.2.31, faixas que o pin de
+# 1.5.3 acima satisfaz — nenhuma das duas obriga a subir o core.
+# langchain-postgres traz pgvector, sqlalchemy e asyncpg como dependencias.
+langchain-postgres==0.0.17
+langchain-text-splitters==1.1.2
