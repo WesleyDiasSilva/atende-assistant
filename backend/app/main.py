@@ -7,6 +7,7 @@
     GET  /api/metricas      contagem de atendimentos por assunto
     GET  /api/solicitacoes  fila de trabalho humano
     POST /api/solicitacoes/{protocolo}/resolver   fecha um item da fila
+    GET  /api/base/documentos   os documentos da base de conhecimento
 
 Responder faz três coisas: pede a resposta ao atendente, registra o
 atendimento para a contagem por assunto e, quando o caso precisa de uma
@@ -19,7 +20,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from app import assistente, dados
+from app import assistente, dados, documentos
 from app.schemas import TipoDeAtendimento
 from app.config import (
     MODELOS,
@@ -153,6 +154,17 @@ def resolver(protocolo: str):
     if solicitacao is None:
         raise HTTPException(status_code=404, detail="Solicitação não encontrada.")
     return solicitacao
+
+
+@app.get("/api/base/documentos")
+def base_documentos():
+    """Os documentos da base de conhecimento, com arquivo e título.
+
+    A base é uma pasta de `.md` no disco. Esta rota só a mostra: nada aqui ainda
+    chega ao atendente.
+    """
+    itens = documentos.listar()
+    return {"itens": itens, "total": len(itens)}
 
 
 @app.get("/api/metricas")
