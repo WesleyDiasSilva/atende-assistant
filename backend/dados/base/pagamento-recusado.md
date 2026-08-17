@@ -2,27 +2,27 @@
 
 ## O que acontece
 
-O pedido fica com status *aguardando pagamento* e nao entra em separacao. Nada
-e cobrado e nenhuma unidade fica reservada.
+O pedido fica com status *aguardando pagamento* e não entra em separação. Nada
+é cobrado e nenhuma unidade fica reservada.
 
 ## Motivos mais comuns
 
-- Limite insuficiente no cartao
+- Limite insuficiente no cartão
 - Dados divergentes do titular
 - Bloqueio preventivo do banco emissor
-- Boleto nao pago dentro do prazo
+- Boleto não pago dentro do prazo
 
 ## O que fazer
 
-Refaca o pagamento na tela do pedido, com outro meio ou outro cartao. O Pix tem
-aprovacao imediata e e o caminho mais rapido.
+Refaça o pagamento na tela do pedido, com outro meio ou outro cartão. O Pix tem
+aprovação imediata e é o caminho mais rápido.
 
-## Cobranca duplicada
+## Cobrança duplicada
 
-Se aparecer mais de uma cobranca para o mesmo pedido, acione o atendimento com
-o numero do pedido: uma delas e estornada integralmente.
+Se aparecer mais de uma cobrança para o mesmo pedido, acione o atendimento com
+o número do pedido: uma delas é estornada integralmente.
 
 ## Prazo do pedido
 
-Pedido sem pagamento confirmado em 3 dias e encerrado pelo sistema e precisa
+Pedido sem pagamento confirmado em 3 dias é encerrado pelo sistema e precisa
 ser refeito.

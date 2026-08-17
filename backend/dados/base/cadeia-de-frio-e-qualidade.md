@@ -1,23 +1,23 @@
 # Cadeia de Frio e Controle de Qualidade
 
-## O que e cadeia de frio
+## O que é cadeia de frio
 
-E a manutencao da temperatura do produto congelado em todas as etapas: camara
-do centro de distribuicao, separacao, transporte e entrega. A temperatura de
-referencia e **-18 graus C ou menos**.
+É a manutenção da temperatura do produto congelado em todas as etapas: câmara
+do centro de distribuição, separação, transporte e entrega. A temperatura de
+referência é **-18 graus C ou menos**.
 
-## Como e mantida no transporte
+## Como é mantida no transporte
 
-A separacao dos pedidos e feita em area refrigerada e o produto sai em
-embalagem termica com gelo seco. Em rotas de frota propria o veiculo tambem e
+A separação dos pedidos é feita em área refrigerada e o produto sai em
+embalagem térmica com gelo seco. Em rotas de frota própria o veículo também é
 refrigerado.
 
-## Verificacao na entrega
+## Verificação na entrega
 
 O produto deve chegar firme ao toque, sem sinal de amolecimento. Cristais de
-gelo na superficie sao normais e nao indicam problema.
+gelo na superfície são normais e não indicam problema.
 
 ## Se houver falha
 
-Produto que chega amolecido ou com embalagem umida entra como item avariado.
-Nao consuma e registre o caso pelo canal de atendimento.
+Produto que chega amolecido ou com embalagem úmida entra como item avariado.
+Não consuma e registre o caso pelo canal de atendimento.

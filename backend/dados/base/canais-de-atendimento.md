@@ -2,21 +2,21 @@
 
 ## Onde falar com a gente
 
-- **Chat no site**: resposta imediata no horario de funcionamento
-- **WhatsApp**: mesmo horario do chat
-- **E-mail**: resposta em ate 2 dias uteis
+- **Chat no site**: resposta imediata no horário de funcionamento
+- **WhatsApp**: mesmo horário do chat
+- **E-mail**: resposta em até 2 dias úteis
 
-## Horario
+## Horário
 
-Segunda a sexta, de **8h00 as 20h00**. Sabado, de **8h00 as 14h00**. Nao
+Segunda a sexta, de **8h00 às 20h00**. Sábado, de **8h00 às 14h00**. Não
 atendemos em domingos e feriados nacionais.
 
-## O que ter em maos
+## O que ter em mãos
 
-O numero do pedido resolve quase tudo mais rapido. Para casos de produto,
-tenha tambem o numero do lote impresso na embalagem.
+O número do pedido resolve quase tudo mais rápido. Para casos de produto,
+tenha também o número do lote impresso na embalagem.
 
-## Fora do horario
+## Fora do horário
 
-Mensagens recebidas fora do horario entram na fila e sao respondidas na
-abertura do proximo dia util.
+Mensagens recebidas fora do horário entram na fila e são respondidas na
+abertura do próximo dia útil.

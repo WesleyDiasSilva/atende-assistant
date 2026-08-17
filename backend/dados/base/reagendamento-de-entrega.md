@@ -2,20 +2,20 @@
 
 ## Quando se aplica
 
-Quando ninguem pode receber o pedido na data prevista. Produto congelado nao
-pode ficar aguardando: por isso o reagendamento tem regra propria.
+Quando ninguém pode receber o pedido na data prevista. Produto congelado não
+pode ficar aguardando: por isso o reagendamento tem regra própria.
 
 ## Como solicitar
 
-Pelo canal de atendimento, **antes das 11h00 do dia anterior** a data prevista.
-Solicitacao no mesmo dia da rota nao consegue mais parar a entrega.
+Pelo canal de atendimento, **antes das 11h00 do dia anterior** à data prevista.
+Solicitação no mesmo dia da rota não consegue mais parar a entrega.
 
 ## Limite
 
-E permitido **um reagendamento** por pedido, para data dentro dos 5 dias uteis
+É permitido **um reagendamento** por pedido, para data dentro dos 5 dias úteis
 seguintes.
 
-## Se a entrega for tentada e nao houver quem receba
+## Se a entrega for tentada e não houver quem receba
 
-O caso segue a politica de Tentativas de Entrega. Nao deixamos o pedido com
-vizinho nem em portaria sem autorizacao registrada no cadastro.
+O caso segue a política de Tentativas de Entrega. Não deixamos o pedido com
+vizinho nem em portaria sem autorização registrada no cadastro.

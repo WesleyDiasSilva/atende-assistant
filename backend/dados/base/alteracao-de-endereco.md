@@ -1,22 +1,22 @@
-# Alteracao de Endereco de Entrega
+# Alteração de Endereço de Entrega
 
-## Ate quando e possivel
+## Até quando é possível
 
-O endereco pode ser alterado enquanto o pedido estiver com status *aguardando
-pagamento*. Depois da confirmacao do pagamento a separacao e disparada e o
-endereco fica travado.
+O endereço pode ser alterado enquanto o pedido estiver com status *aguardando
+pagamento*. Depois da confirmação do pagamento a separação é disparada e o
+endereço fica travado.
 
 ## Como solicitar
 
-Pelo canal de atendimento, informando o numero do pedido e o endereco correto
+Pelo canal de atendimento, informando o número do pedido e o endereço correto
 por completo, com CEP.
 
-## Mudanca de regiao
+## Mudança de região
 
-Se o novo endereco estiver em outra faixa de frete ou de prazo, o valor e o
-prazo sao recalculados e a diferenca precisa ser resolvida antes da alteracao.
+Se o novo endereço estiver em outra faixa de frete ou de prazo, o valor e o
+prazo são recalculados e a diferença precisa ser resolvida antes da alteração.
 
-## Endereco incorreto descoberto depois
+## Endereço incorreto descoberto depois
 
-Se o pedido ja saiu para entrega, o caso passa a seguir a politica de
+Se o pedido já saiu para entrega, o caso passa a seguir a política de
 Reagendamento e Tentativas de Entrega.

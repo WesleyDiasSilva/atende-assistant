@@ -2,22 +2,22 @@
 
 ## Os status
 
-- **Aguardando pagamento**: pedido criado, pagamento ainda nao confirmado
-- **Em separacao**: pagamento confirmado, pedido sendo montado na camara
+- **Aguardando pagamento**: pedido criado, pagamento ainda não confirmado
+- **Em separação**: pagamento confirmado, pedido sendo montado na câmara
 - **Em transporte**: pedido saiu para entrega
 - **Entregue**: recebimento confirmado
 
 ## Onde acompanhar
 
-Na area de pedidos da sua conta, e pelo codigo de rastreio enviado por e-mail
+Na área de pedidos da sua conta, e pelo código de rastreio enviado por e-mail
 e WhatsApp quando o pedido sai para entrega.
 
-## Status sem atualizacao
+## Status sem atualização
 
-Em rota de transportadora parceira o status pode ficar sem movimentacao por um
-dia util. Se passar disso, acione o atendimento com o numero do pedido.
+Em rota de transportadora parceira o status pode ficar sem movimentação por um
+dia útil. Se passar disso, acione o atendimento com o número do pedido.
 
 ## Prazo previsto
 
-A data prevista aparece na tela do pedido e considera a regiao de entrega,
-conforme a politica de Prazos de Entrega.
+A data prevista aparece na tela do pedido e considera a região de entrega,
+conforme a política de Prazos de Entrega.

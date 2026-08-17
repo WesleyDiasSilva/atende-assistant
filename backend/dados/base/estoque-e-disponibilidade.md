@@ -1,21 +1,21 @@
 # Estoque e Disponibilidade
 
-## Estoque por regiao
+## Estoque por região
 
-O estoque e distribuido por centro de distribuicao. Um produto pode estar
-disponivel para uma regiao e indisponivel para outra no mesmo dia.
+O estoque é distribuído por centro de distribuição. Um produto pode estar
+disponível para uma região e indisponível para outra no mesmo dia.
 
 ## Como saber
 
-A disponibilidade mostrada na pagina do produto ja considera o CEP informado.
-Sem CEP, a pagina mostra a disponibilidade geral.
+A disponibilidade mostrada na página do produto já considera o CEP informado.
+Sem CEP, a página mostra a disponibilidade geral.
 
 ## Avise-me
 
-Em produto esgotado e possivel cadastrar o e-mail para aviso de retorno. O
-aviso nao reserva unidade nem garante preco.
+Em produto esgotado é possível cadastrar o e-mail para aviso de retorno. O
+aviso não reserva unidade nem garante preço.
 
 ## Reserva
 
-Nao trabalhamos com reserva de produto. A unidade so fica vinculada ao pedido
-apos a confirmacao do pagamento.
+Não trabalhamos com reserva de produto. A unidade só fica vinculada ao pedido
+após a confirmação do pagamento.

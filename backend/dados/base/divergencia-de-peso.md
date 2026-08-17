@@ -1,26 +1,26 @@
-# Divergencia de Peso
+# Divergência de Peso
 
 ## Por que existe
 
-Pecas de carne sao produtos de peso variavel. Uma picanha anunciada com 1,2 kg
-nao sai exatamente com 1,200 kg.
+Peças de carne são produtos de peso variável. Uma picanha anunciada com 1,2 kg
+não sai exatamente com 1,200 kg.
 
-## Tolerancia
+## Tolerância
 
-A variacao aceita e de **3% para mais ou para menos** sobre o peso anunciado na
-descricao do produto.
+A variação aceita é de **3% para mais ou para menos** sobre o peso anunciado na
+descrição do produto.
 
-## Cobranca
+## Cobrança
 
-A cobranca e feita pelo peso anunciado, nao pelo peso final da peca. Variacao
-dentro da tolerancia nao gera cobranca extra nem estorno.
+A cobrança é feita pelo peso anunciado, não pelo peso final da peça. Variação
+dentro da tolerância não gera cobrança extra nem estorno.
 
-## Fora da tolerancia
+## Fora da tolerância
 
-Se a diferenca passar de 3%, o caso entra como item incorreto e a diferenca e
-estornada, conforme a politica de Troca e Devolucao.
+Se a diferença passar de 3%, o caso entra como item incorreto e a diferença é
+estornada, conforme a política de Troca e Devolução.
 
 ## Produtos de peso fixo
 
-Bandejas, caixas de hamburguer e pacotes fechados tem peso fixo declarado e
-nao estao sujeitos a essa tolerancia.
+Bandejas, caixas de hambúrguer e pacotes fechados têm peso fixo declarado e
+não estão sujeitos a essa tolerância.

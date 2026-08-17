@@ -1,26 +1,26 @@
 # Conta e Cadastro
 
-## Dados necessarios
+## Dados necessários
 
-Nome completo, CPF, e-mail, telefone com WhatsApp e endereco com CEP. O CPF e
-usado na emissao da nota fiscal.
+Nome completo, CPF, e-mail, telefone com WhatsApp e endereço com CEP. O CPF é
+usado na emissão da nota fiscal.
 
-## Endereco de entrega
+## Endereço de entrega
 
-E possivel manter mais de um endereco cadastrado e escolher qual usar em cada
+É possível manter mais de um endereço cadastrado e escolher qual usar em cada
 pedido.
 
-## Alteracao de dados
+## Alteração de dados
 
-Nome e CPF exigem confirmacao por documento, porque constam na nota fiscal.
-Telefone, e-mail e enderecos podem ser alterados diretamente na conta.
+Nome e CPF exigem confirmação por documento, porque constam na nota fiscal.
+Telefone, e-mail e endereços podem ser alterados diretamente na conta.
 
 ## Acesso
 
-O acesso e por e-mail e senha. A recuperacao de senha e feita pelo link
+O acesso é por e-mail e senha. A recuperação de senha é feita pelo link
 enviado ao e-mail cadastrado.
 
-## Historico
+## Histórico
 
-Os pedidos ficam disponiveis no historico da conta, com nota fiscal e status
+Os pedidos ficam disponíveis no histórico da conta, com nota fiscal e status
 de cada um.

@@ -2,26 +2,26 @@
 
 ## Como funciona
 
-Voce monta uma lista de itens e escolhe a periodicidade: a cada 15, 30 ou 60
-dias. A cada ciclo o pedido e gerado com a lista salva e cobrado na forma de
+Você monta uma lista de itens e escolhe a periodicidade: a cada 15, 30 ou 60
+dias. A cada ciclo o pedido é gerado com a lista salva e cobrado na forma de
 pagamento cadastrada.
 
-## Beneficios
+## Benefícios
 
 - **5% de desconto** nos itens da lista
-- Prioridade na separacao
+- Prioridade na separação
 
-## Alteracao da lista
+## Alteração da lista
 
 A lista pode ser editada a qualquer momento e passa a valer no ciclo seguinte.
-Alteracao feita com o pedido do ciclo ja em separacao vale para o proximo.
+Alteração feita com o pedido do ciclo já em separação vale para o próximo.
 
 ## Pausa
 
-E possivel pausar a assinatura por um ou dois ciclos, sem perder a lista nem o
+É possível pausar a assinatura por um ou dois ciclos, sem perder a lista nem o
 desconto.
 
-## Item indisponivel no ciclo
+## Item indisponível no ciclo
 
-Segue a regra de Item em Falta: o valor do item e estornado e o restante do
-pedido e entregue.
+Segue a regra de Item em Falta: o valor do item é estornado e o restante do
+pedido é entregue.

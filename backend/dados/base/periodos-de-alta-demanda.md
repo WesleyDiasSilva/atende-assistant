@@ -1,26 +1,26 @@
-# Periodos de Alta Demanda
+# Períodos de Alta Demanda
 
 ## O que muda
 
 Em datas de alto volume — fim de ano, feriados prolongados e datas
-promocionais — o prazo de entrega pode ser maior que o publicado na politica de
+promocionais — o prazo de entrega pode ser maior que o publicado na política de
 Prazos de Entrega.
 
 ## Como saber
 
-O prazo mostrado na tela do pedido ja considera o calendario do periodo. O que
-vale e sempre a data exibida na confirmacao.
+O prazo mostrado na tela do pedido já considera o calendário do período. O que
+vale é sempre a data exibida na confirmação.
 
 ## Entrega no mesmo dia
 
 O corte das 11h00 pode ser antecipado em dias de pico. Quando isso ocorre, o
-aviso aparece na tela antes da confirmacao.
+aviso aparece na tela antes da confirmação.
 
-## Recomendacao
+## Recomendação
 
-Em datas de fim de ano, antecipe o pedido em pelo menos 5 dias uteis. O estoque
-de itens de churrasco e o primeiro a esgotar.
+Em datas de fim de ano, antecipe o pedido em pelo menos 5 dias úteis. O estoque
+de itens de churrasco é o primeiro a esgotar.
 
 ## Feriados
 
-Nao ha entrega em domingos e feriados nacionais, inclusive nesses periodos.
+Não há entrega em domingos e feriados nacionais, inclusive nesses períodos.

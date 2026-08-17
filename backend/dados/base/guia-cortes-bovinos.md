@@ -2,19 +2,19 @@
 
 ## Cortes para grelha e churrasco
 
-- **Picanha**: peca de 1,0 a 1,3 kg, com capa de gordura preservada
-- **Contrafile**: vendido em peca ou em bifes de 2 cm
+- **Picanha**: peça de 1,0 a 1,3 kg, com capa de gordura preservada
+- **Contrafilé**: vendido em peça ou em bifes de 2 cm
 - **Fraldinha**: fibra longa, indicada para churrasco e para forno
 - **Costela**: em manta ou em tiras, para cozimento longo
 
 ## Cortes para panela e cozimento
 
-- **Musculo** e **acem**: cozidos, ensopados e desfiados
-- **Patinho**: moido, bifes ou iscas
-- **Ossobuco**: corte transversal do musculo traseiro, com osso
+- **Músculo** e **acém**: cozidos, ensopados e desfiados
+- **Patinho**: moído, bifes ou iscas
+- **Ossobuco**: corte transversal do músculo traseiro, com osso
 
 ## Como comprar
 
-Os cortes sao vendidos por peso aproximado da peca. O peso exato de cada peca
-aparece na descricao do produto e pode variar dentro da tolerancia descrita na
-Politica de Divergencia de Peso.
+Os cortes são vendidos por peso aproximado da peça. O peso exato de cada peça
+aparece na descrição do produto e pode variar dentro da tolerância descrita na
+Política de Divergência de Peso.

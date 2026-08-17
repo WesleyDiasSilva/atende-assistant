@@ -2,21 +2,21 @@
 
 ## Quantas tentativas
 
-Sao feitas **duas tentativas** de entrega no endereco cadastrado, em dias
+São feitas **duas tentativas** de entrega no endereço cadastrado, em dias
 diferentes.
 
-## Se ninguem receber
+## Se ninguém receber
 
-Depois da segunda tentativa o pedido retorna ao centro de distribuicao. Por
-ser produto congelado, ele nao pode ser mantido em espera para uma terceira
-tentativa: o valor e devolvido na forma de pagamento original.
+Depois da segunda tentativa o pedido retorna ao centro de distribuição. Por
+ser produto congelado, ele não pode ser mantido em espera para uma terceira
+tentativa: o valor é devolvido na forma de pagamento original.
 
 ## Prazo do estorno
 
-O estorno segue o mesmo prazo da politica de Troca e Devolucao: ate 10 dias
-uteis apos o retorno do produto ao centro de distribuicao.
+O estorno segue o mesmo prazo da política de Troca e Devolução: até 10 dias
+úteis após o retorno do produto ao centro de distribuição.
 
-## Autorizacao para deixar com terceiro
+## Autorização para deixar com terceiro
 
-Pode ser registrada no cadastro, com nome de quem esta autorizado a receber.
-Sem esse registro, o entregador nao deixa o pedido com outra pessoa.
+Pode ser registrada no cadastro, com nome de quem está autorizado a receber.
+Sem esse registro, o entregador não deixa o pedido com outra pessoa.

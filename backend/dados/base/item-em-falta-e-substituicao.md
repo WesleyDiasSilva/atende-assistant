@@ -1,27 +1,27 @@
 # Item em Falta
 
-## Nao substituimos por conta propria
+## Não substituímos por conta própria
 
-Se um item do pedido nao estiver disponivel na separacao, ele **nao e trocado
-por outro** sem autorizacao sua. Nao enviamos produto diferente do que foi
+Se um item do pedido não estiver disponível na separação, ele **não é trocado
+por outro** sem autorização sua. Não enviamos produto diferente do que foi
 pedido.
 
 ## O que acontece
 
-O pedido segue com os demais itens e o valor do item ausente e estornado na
+O pedido segue com os demais itens e o valor do item ausente é estornado na
 forma de pagamento original.
 
 ## Aviso
 
-Voce e avisado por e-mail e WhatsApp antes da saida do pedido, com a
-identificacao do item e o valor a ser estornado.
+Você é avisado por e-mail e WhatsApp antes da saída do pedido, com a
+identificação do item e o valor a ser estornado.
 
 ## Se preferir outro produto
 
 Basta responder ao atendimento indicando um substituto de valor equivalente,
-desde que o pedido ainda esteja em separacao.
+desde que o pedido ainda esteja em separação.
 
-## Efeito no frete gratis
+## Efeito no frete grátis
 
-Se o estorno derrubar o total abaixo do minimo, o frete gratis ja concedido e
+Se o estorno derrubar o total abaixo do mínimo, o frete grátis já concedido é
 mantido.

@@ -1,24 +1,24 @@
 # Descarte da Embalagem
 
-## Embalagem termica
+## Embalagem térmica
 
-A caixa termica **nao e reutilizavel e nao precisa ser devolvida**. Ela e
-descartada no lixo comum, ja que nao ha coleta seletiva para o material.
+A caixa térmica **não é reutilizável e não precisa ser devolvida**. Ela é
+descartada no lixo comum, já que não há coleta seletiva para o material.
 
 ## Gelo seco
 
-O gelo seco **sublima**: passa de solido a gas e desaparece sozinho. Deixe a
-caixa aberta em local ventilado ate o material sumir.
+O gelo seco **sublima**: passa de sólido a gás e desaparece sozinho. Deixe a
+caixa aberta em local ventilado até o material sumir.
 
-Nao toque com a mao sem protecao, nao coloque em recipiente fechado e nao
-descarte na pia nem no vaso sanitario.
+Não toque com a mão sem proteção, não coloque em recipiente fechado e não
+descarte na pia nem no vaso sanitário.
 
 ## Embalagens dos produtos
 
-Filmes e bandejas plasticas vao para o reciclavel, limpos. Papelao da caixa
-externa tambem e reciclavel.
+Filmes e bandejas plásticas vão para o reciclável, limpos. Papelão da caixa
+externa também é reciclável.
 
 ## Se a caixa chegar danificada
 
-Registre no atendimento com foto: a integridade da termica e parte do controle
+Registre no atendimento com foto: a integridade da térmica é parte do controle
 de qualidade da entrega.

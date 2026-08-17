@@ -1,22 +1,22 @@
-# Informacao Nutricional e Alergenicos
+# Informação Nutricional e Alergênicos
 
 ## Onde consultar
 
-A tabela nutricional completa de cada produto esta na pagina do produto, na
-aba de informacoes, e tambem impressa na embalagem.
+A tabela nutricional completa de cada produto está na página do produto, na
+aba de informações, e também impressa na embalagem.
 
-## Alergenicos
+## Alergênicos
 
-A declaracao de alergenicos segue a norma da Anvisa e aparece na embalagem em
+A declaração de alergênicos segue a norma da Anvisa e aparece na embalagem em
 destaque. Produtos processados podem conter ou ter contato com: leite, soja,
 trigo, ovo e derivados.
 
-## Producao compartilhada
+## Produção compartilhada
 
-Alguns itens sao produzidos em linhas que tambem processam outros alergenicos.
+Alguns itens são produzidos em linhas que também processam outros alergênicos.
 Quando isso ocorre, a embalagem traz a frase de alerta correspondente.
 
-## Restricoes alimentares
+## Restrições alimentares
 
-Se voce tem restricao severa, recomendamos conferir a embalagem do lote
-recebido, porque a formulacao pode mudar entre lotes.
+Se você tem restrição severa, recomendamos conferir a embalagem do lote
+recebido, porque a formulação pode mudar entre lotes.

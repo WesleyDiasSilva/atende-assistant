@@ -1,23 +1,23 @@
 # Origem e Rastreabilidade
 
-## Procedencia
+## Procedência
 
-Todos os produtos vem de estabelecimentos com registro no **Servico de
-Inspecao Federal (SIF)** e sao acompanhados da documentacao sanitaria exigida.
+Todos os produtos vêm de estabelecimentos com registro no **Serviço de
+Inspeção Federal (SIF)** e são acompanhados da documentação sanitária exigida.
 
 ## Rastreio do lote
 
-Cada embalagem traz o numero do lote e a data de producao. Com esses dois
-dados e possivel rastrear a unidade produtora e a data de abate ou de
+Cada embalagem traz o número do lote e a data de produção. Com esses dois
+dados é possível rastrear a unidade produtora e a data de abate ou de
 processamento.
 
 ## Consulta
 
-Se precisar do laudo ou da ficha tecnica de um lote especifico, o atendimento
-solicita o documento a area de qualidade. O prazo de resposta e o mesmo do
+Se precisar do laudo ou da ficha técnica de um lote específico, o atendimento
+solicita o documento à área de qualidade. O prazo de resposta é o mesmo do
 canal de atendimento.
 
 ## Bem-estar animal
 
 Os fornecedores seguem os protocolos de bem-estar animal exigidos pela
-legislacao e auditados pelos programas de certificacao dos frigorificos.
+legislação e auditados pelos programas de certificação dos frigoríficos.

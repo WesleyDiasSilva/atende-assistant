@@ -1,26 +1,26 @@
 # Nota Fiscal e Faturamento
 
-## Emissao
+## Emissão
 
-A nota fiscal eletronica e emitida na saida do pedido e enviada por e-mail
-junto com o codigo de rastreio.
+A nota fiscal eletrônica é emitida na saída do pedido e enviada por e-mail
+junto com o código de rastreio.
 
 ## Dados que constam
 
-Nome e CPF do cadastro, endereco de entrega, itens, pesos e valores. Os dados
-sao os do cadastro no momento da confirmacao do pagamento.
+Nome e CPF do cadastro, endereço de entrega, itens, pesos e valores. Os dados
+são os do cadastro no momento da confirmação do pagamento.
 
-## Divergencia nos dados
+## Divergência nos dados
 
-Se algum dado estiver errado, acione o atendimento com o numero do pedido. A
-correcao e feita por carta de correcao ou por nota substitutiva, conforme o
+Se algum dado estiver errado, acione o atendimento com o número do pedido. A
+correção é feita por carta de correção ou por nota substitutiva, conforme o
 campo divergente.
 
 ## Segunda via
 
-Fica disponivel no historico de pedidos da conta, sem prazo de expiracao.
+Fica disponível no histórico de pedidos da conta, sem prazo de expiração.
 
 ## Nota e troca
 
-Em caso de devolucao, a nota de entrada e emitida na coleta e o estorno segue
-o prazo da politica de Troca e Devolucao.
+Em caso de devolução, a nota de entrada é emitida na coleta e o estorno segue
+o prazo da política de Troca e Devolução.
