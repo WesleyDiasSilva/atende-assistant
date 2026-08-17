@@ -138,6 +138,9 @@ export default function App() {
           // O que o contexto custou nesta pergunta. É o número que compara os
           // modos: a mesma resposta pode sair por um décimo dos tokens.
           tokensDeEntrada: resposta.ok ? dados.tokens_de_entrada : null,
+          // Os documentos que a busca trouxe. Vêm do nosso código, não do texto
+          // do modelo — é isso que permite conferir a resposta contra a base.
+          fontes: resposta.ok ? dados.fontes : null,
           temperaturaUsada: temperatura,
         },
       ])
@@ -337,6 +340,15 @@ export default function App() {
                     <div className={`bolha ${mensagem.houveErro ? 'erro' : ''}`}>
                       {mensagem.texto}
                     </div>
+                    {/* As fontes ficam fora da bolha, como campo próprio: quem
+                        lê a resposta consegue ir ao documento e conferir. */}
+                    {mensagem.fontes?.length > 0 && (
+                      <ul className="fontes">
+                        {mensagem.fontes.map((arquivo) => (
+                          <li key={arquivo}>{arquivo}</li>
+                        ))}
+                      </ul>
+                    )}
                     {/* Registra a configuração de cada turno: ao trocar um controle
                         e repetir a pergunta, a diferença fica documentada na tela. */}
                     {mensagem.autor === 'atendente' && !mensagem.houveErro && (

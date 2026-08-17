@@ -165,6 +165,7 @@ def responder(pergunta_do_cliente: PerguntaDoCliente):
     return {
         **resposta.model_dump(),
         "tokens_de_entrada": atendimento.tokens_de_entrada,
+        "fontes": atendimento.fontes,
     }
 
 
@@ -189,11 +190,7 @@ def resolver(protocolo: str):
 
 @app.get("/api/base/documentos")
 def base_documentos():
-    """Os documentos da base de conhecimento, com arquivo e título.
-
-    A base é uma pasta de `.md` no disco. Esta rota só a mostra: nada aqui ainda
-    chega ao atendente.
-    """
+    """Os documentos da base de conhecimento, com arquivo e título."""
     itens = documentos.listar()
     return {"itens": itens, "total": len(itens)}
 

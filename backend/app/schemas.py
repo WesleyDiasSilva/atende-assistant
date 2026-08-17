@@ -73,7 +73,14 @@ class Atendimento(BaseModel):
     lá são campos que o modelo preenche, aqui é observação do código. Contagem
     de tokens não é opinião do modelo — é o número que o Bedrock informou. Pedir
     que ele mesmo declarasse isso seria pedir que inventasse.
+
+    O mesmo vale para as fontes, e é o que as torna auditáveis: quem sabe quais
+    documentos entraram na conversa é a busca, não o modelo.
     """
 
     resposta: RespostaAtendimento
     tokens_de_entrada: int = 0
+    # Os documentos que a busca recuperou, na ordem em que ela os ranqueou. Fica
+    # vazio nos outros dois modos: sem busca não houve seleção, e citar os 34
+    # documentos da base inteira como "fonte" não informaria nada.
+    fontes: list[str] = []

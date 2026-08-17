@@ -27,7 +27,7 @@ from langchain_aws import ChatBedrockConverse
 from langchain_core.messages import SystemMessage, ToolMessage
 from langchain_core.prompts import ChatPromptTemplate
 
-from app import documentos
+from app import documentos, retrieval
 from app.config import (
     MODELOS,
     MODO_PADRAO,
@@ -57,8 +57,21 @@ prompt = ChatPromptTemplate.from_messages(
 
 # Abre a mensagem que carrega os documentos. Fica separada de MENSAGEM_SISTEMA
 # porque ela só existe quando há contexto: sem documento nenhum, não há o que
-# instruir.
-CABECALHO_DO_CONTEXTO = """Os documentos abaixo são a base de conhecimento da empresa. Use-os para responder ao cliente.
+# instruir — e é por isso que o modo sem conhecimento inventa. A regra de não
+# inventar chega junto com a base, não antes dela.
+#
+# A recusa vem daqui, e não de um limiar de score na busca, porque o score não
+# separa pergunta coberta de pergunta não coberta: medido nesta base, as duas
+# faixas se sobrepõem. Quem sabe se o contexto responde é quem lê o contexto.
+#
+# O parágrafo sobre ferramenta não é detalhe: sem ele, "responda apenas com o
+# contexto" faz o modelo desprezar o resultado de uma consulta de pedido, e a
+# pergunta "onde está o pedido 81030" para de ser respondida.
+CABECALHO_DO_CONTEXTO = """Os documentos abaixo são a base de conhecimento da empresa.
+
+Sobre políticas, prazos, pagamento e produtos, responda usando apenas o que está nesses documentos. Se a resposta não estiver neles, diga que não encontrou essa informação na base e ofereça encaminhar o caso para um atendente. Não complete com conhecimento geral e nunca invente número, prazo, valor ou condição.
+
+O resultado de uma ferramenta não é contexto: é dado do sistema sobre o pedido daquele cliente, e vale como informação confiável.
 
 CONTEXTO:
 """
@@ -82,15 +95,21 @@ def montar_modelo(modelo: str, temperatura: float) -> ChatBedrockConverse:
     )
 
 
-def _trechos_do_modo(modo: str) -> list[tuple[str, str]]:
+def _trechos_do_modo(modo: str, pergunta: str) -> list[tuple[str, str]]:
     """O que vai no contexto, conforme o modo escolhido: [(arquivo, conteudo)].
 
     No modo sem conhecimento a lista é vazia e nada muda em relação ao
     comportamento anterior. No stuffing, a base inteira entra a cada pergunta —
-    é o caminho mais curto para o atendente acertar, e o mais caro.
+    é o caminho mais curto para o atendente acertar, e o mais caro. No RAG, a
+    busca decide: entram só os trechos mais próximos da pergunta.
     """
     if modo == "stuffing":
         return [(arquivo, conteudo) for arquivo, _, conteudo in documentos.carregar()]
+    if modo == "rag":
+        return [
+            (trecho.metadata["arquivo"], trecho.page_content)
+            for trecho in retrieval.buscar(pergunta)
+        ]
     return []
 
 
@@ -108,6 +127,18 @@ def _mensagem_de_contexto(trechos: list[tuple[str, str]]) -> SystemMessage:
     """
     corpo = "\n\n".join(f"[{arquivo}]\n{conteudo}" for arquivo, conteudo in trechos)
     return SystemMessage(content=CABECALHO_DO_CONTEXTO + corpo)
+
+
+def _fontes(modo: str, trechos: list[tuple[str, str]]) -> list[str]:
+    """Os documentos que a busca recuperou, sem repetir e na ordem do ranking.
+
+    Dois trechos podem vir do mesmo arquivo, e o cliente não precisa ver o nome
+    duas vezes. Só o modo RAG tem fonte a declarar: no stuffing entrou tudo, e
+    listar a base inteira não diria de onde a resposta saiu.
+    """
+    if modo != "rag":
+        return []
+    return list(dict.fromkeys(arquivo for arquivo, _ in trechos))
 
 
 def _tokens_de_entrada(resposta_do_modelo) -> int:
@@ -170,10 +201,11 @@ def responder(
     # A mensagem de contexto entra depois do format_messages, e é aí que ela
     # escapa da formatação de template. Vai antes da mensagem do cliente para o
     # modelo ler a base antes de ler a pergunta.
-    trechos = _trechos_do_modo(modo)
+    trechos = _trechos_do_modo(modo, pergunta)
     if trechos:
         mensagens.insert(-1, _mensagem_de_contexto(trechos))
 
+    fontes = _fontes(modo, trechos)
     tokens_de_entrada = 0
 
     try:
@@ -201,7 +233,9 @@ def responder(
 
         # Etapa final: a mesma conversa, agora exigindo o formato de saída.
         resposta = model.with_structured_output(RespostaAtendimento).invoke(mensagens)
-        return Atendimento(resposta=resposta, tokens_de_entrada=tokens_de_entrada)
+        return Atendimento(
+            resposta=resposta, tokens_de_entrada=tokens_de_entrada, fontes=fontes
+        )
     except ClientError as erro:
         # O LangChain não embrulha os erros do Bedrock: eles continuam sendo do
         # botocore, e ClientError é a classe-mãe de todos. Por isso um único
