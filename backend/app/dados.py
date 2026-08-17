@@ -1,9 +1,14 @@
 # -*- coding: utf-8 -*-
 """Persistência em arquivo.
 
-O projeto não tem banco: cada registro é uma linha JSON num arquivo, formato
-que se lê a olho nu e se acompanha crescendo durante uma demonstração. A pasta
-fica fora do pacote da aplicação para separar código de dado gravado.
+Cada registro é uma linha JSON num arquivo, formato que se lê a olho nu e se
+acompanha crescendo. A pasta fica fora do pacote da aplicação para separar código
+de dado gravado.
+
+O projeto tem um Postgres (ver `db.py`), e estes registros continuam em arquivo de
+propósito: o banco entrou para guardar vetores, que é o que arquivo não sabe
+comparar. Fila e histórico não têm esse problema, então trocá-los por tabela não
+resolveria nada que exista aqui.
 """
 import json
 from datetime import datetime, timezone

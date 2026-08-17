@@ -81,6 +81,6 @@ class Atendimento(BaseModel):
     resposta: RespostaAtendimento
     tokens_de_entrada: int = 0
     # Os documentos que a busca recuperou, na ordem em que ela os ranqueou. Fica
-    # vazio nos outros dois modos: sem busca não houve seleção, e citar os 34
-    # documentos da base inteira como "fonte" não informaria nada.
+    # vazio nos outros dois modos: sem busca não houve seleção, e citar a base
+    # inteira como "fonte" não informaria nada.
     fontes: list[str] = []

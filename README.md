@@ -134,8 +134,9 @@ npm run dev
 
 ## A base de conhecimento
 
-Os documentos da empresa são os `.md` de `backend/dados/base/`. Eles chegam ao
-atendente por dois caminhos, e a diferença entre os dois é o assunto do projeto:
+Os documentos da empresa são os `.md` de `backend/dados/base/`. Além do modo em
+que nenhum deles chega ao atendente, há dois caminhos pelos quais eles chegam — e
+a diferença entre esses dois é o assunto do projeto:
 
 **No prompt inteiro (stuffing).** Todos os documentos entram no contexto a cada
 pergunta. Simples, e não precisa de banco nenhum — mas paga a base completa em
@@ -156,8 +157,9 @@ python -m scripts.limpar_base    # apaga os vetores, mantém os .md
 ```
 
 A aba **Base de conhecimento** lista os documentos com a contagem de chunks de
-cada um, e permite acrescentar um `.md` — que é gravado e indexado na hora, com
-as etapas aparecendo na tela.
+cada um, permite acrescentar um `.md` — gravado e indexado na hora, com as etapas
+aparecendo na tela — e remover um documento, que apaga o arquivo e os vetores
+dele juntos.
 
 ### Quem recusa é o prompt, não o score
 
@@ -167,18 +169,28 @@ score de pergunta coberta e não coberta se sobrepõem: uma pergunta que a base 
 cobre pontua melhor que várias que ela cobre.
 
 O "não encontrei na base" vem da instrução que acompanha o contexto, em
-`assistente.py`. Ela chega junto com os documentos, e não antes deles — é por isso
-que o modo sem conhecimento não recusa: sem documento, não há o que instruir.
+`assistente.py`. Ela chega junto com os documentos, e não antes deles: no modo sem
+conhecimento não há base contra a qual conferir, então o modelo responde com o que
+aprendeu sobre lojas em geral — às vezes um número específico e errado, às vezes
+uma resposta vaga, nunca o que esta loja escreveu.
 
 ## Os quatro controles da interface
 
-**Conhecimento** — quanto da base entra no contexto: nada, tudo, ou os trechos
-recuperados. É o único controle que muda *o que* o atendente sabe. O rodapé de
-cada resposta mostra os tokens de entrada, que é o custo daquele contexto.
+Na mesma ordem em que aparecem no painel.
 
 **Modelo** — troca qual modelo responde. Os três configurados foram verificados
 nesta conta, com acesso liberado e `temperature` aceito. O custo é indicado em
 ordem relativa; a latência real de cada resposta aparece no rodapé da mensagem.
+
+**Conhecimento** — quanto da base entra no contexto: nada, tudo, ou os trechos
+recuperados. É o único destes quatro que muda *o que* o atendente sabe; os outros
+três mudam *como* ele responde.
+
+O rodapé de cada resposta mostra os **tokens de entrada da primeira ida ao
+modelo** — o tamanho do prompt, que é o que o modo de conhecimento controla. Não
+é o custo total da pergunta: cada volta do ciclo de ferramenta e a chamada final
+que exige o formato reenviam a conversa inteira. O número serve para comparar os
+modos entre si, e a diferença entre eles é grande o bastante para o argumento.
 
 **Perfil de atendimento** — troca o tom da resposta. Muda *como* o atendente
 escreve, não *o que* ele sabe.
