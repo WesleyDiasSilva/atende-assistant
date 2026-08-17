@@ -14,13 +14,14 @@ atendimento para a contagem por assunto e, quando o caso precisa de uma
 pessoa, coloca-o na fila.
 """
 import logging
+from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from app import assistente, dados, documentos
+from app import assistente, dados, db, documentos
 from app.schemas import TipoDeAtendimento
 from app.config import (
     MODELOS,
@@ -41,7 +42,20 @@ load_dotenv()
 # justamente a prova de que quem executa a ferramenta é o nosso código.
 logging.basicConfig(level=logging.INFO, format="%(levelname)s:     %(message)s")
 
-app = FastAPI(title="Atendente de Pedidos")
+
+@asynccontextmanager
+async def ciclo_de_vida(_: FastAPI):
+    """Roda uma vez, quando a API sobe.
+
+    Tocar o banco no boot é de propósito: é o último momento em que ainda dá
+    para ver no log que a conexão não funciona, antes de a primeira pergunta
+    falhar na frente de alguém.
+    """
+    db.garantir_extensao_vector()
+    yield
+
+
+app = FastAPI(title="Atendente de Pedidos", lifespan=ciclo_de_vida)
 
 # A interface roda em outra porta durante o desenvolvimento, então o navegador
 # precisa de permissão explícita para chamar esta API.

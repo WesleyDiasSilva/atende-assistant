@@ -1,13 +1,45 @@
 services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_NAME:-atende_assistant}
+    ports:
+      # DB_PORT e a porta no host: 5432 costuma estar ocupada por um Postgres
+      # local, e 5433 por outro projeto. Dentro da rede do compose o backend
+      # continua falando com db:5432.
+      - "${DB_PORT:-5434}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    # Sem healthcheck o backend sobe antes do banco aceitar conexao: o Postgres
+    # reinicia durante a propria inicializacao, e "container de pe" nao significa
+    # "banco pronto".
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-atende_assistant}"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
   backend:
     build: ./backend
     env_file: .env
+    environment:
+      # Vence o env_file de proposito. No .env ficam os valores de quem roda o
+      # uvicorn na maquina (localhost e a porta publicada); aqui dentro o banco
+      # atende como db:5432.
+      DB_HOST: db
+      DB_PORT: 5432
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     # O codigo e montado do host: editar um arquivo recarrega o servidor,
     # sem precisar reconstruir a imagem.
     volumes:
       - ./backend:/app
+    depends_on:
+      db:
+        condition: service_healthy
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
   frontend:
@@ -23,3 +55,6 @@ services:
       - /app/node_modules
     depends_on:
       - backend
+
+volumes:
+  pgdata:

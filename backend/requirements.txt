@@ -16,3 +16,7 @@ uvicorn[standard]==0.52.1
 # reproduzivel entre turmas.
 langchain-core==1.5.3
 langchain-aws==1.6.4
+
+# Postgres. O extra [binary] traz a libpq compilada no wheel: sem ele a
+# instalacao exige pg_config e cabecalhos de C na maquina.
+psycopg[binary]==3.3.4
