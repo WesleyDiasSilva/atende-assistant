@@ -36,3 +36,34 @@ def carregar() -> list[tuple[str, str, str]]:
 def listar() -> list[dict]:
     """Só arquivo e título — é o que a interface precisa para listar a base."""
     return [{"arquivo": arquivo, "titulo": titulo} for arquivo, titulo, _ in carregar()]
+
+
+def _nome_seguro(arquivo: str) -> str:
+    """Reduz o nome recebido de fora ao nome do arquivo, sem caminho.
+
+    Um upload chega com o nome que o cliente enviar, e `../../app/main.py` é um
+    nome válido de arquivo. `Path(...).name` descarta qualquer diretório, então o
+    que sobra só pode cair dentro de `dados/base/`.
+    """
+    return Path(arquivo).name
+
+
+def gravar(arquivo: str, conteudo: str) -> tuple[str, str]:
+    """Grava um `.md` na base e devolve (arquivo, titulo).
+
+    Sobrescreve quando o nome já existe: a base é uma pasta, e mandar o mesmo
+    documento de novo é substituí-lo, não criar um segundo.
+    """
+    caminho = PASTA / _nome_seguro(arquivo)
+    caminho.parent.mkdir(parents=True, exist_ok=True)
+    caminho.write_text(conteudo, encoding="utf-8")
+    return caminho.name, _titulo(conteudo)
+
+
+def remover(arquivo: str) -> bool:
+    """Apaga um `.md` da base. Devolve False se ele não existia."""
+    caminho = PASTA / _nome_seguro(arquivo)
+    if not caminho.is_file():
+        return False
+    caminho.unlink()
+    return True

@@ -1,13 +1,15 @@
 # -*- coding: utf-8 -*-
 """API do atendente de pedidos.
 
-    GET  /api/saude         estado da API
-    GET  /api/configuracao  modelos, perfis, modos de conhecimento e temperatura
-    POST /api/responder     recebe a pergunta e devolve a resposta em campos
-    GET  /api/metricas      contagem de atendimentos por assunto
-    GET  /api/solicitacoes  fila de trabalho humano
-    POST /api/solicitacoes/{protocolo}/resolver   fecha um item da fila
-    GET  /api/base/documentos   os documentos da base de conhecimento
+    GET    /api/saude          estado da API
+    GET    /api/configuracao   modelos, perfis, modos e faixa de temperatura
+    POST   /api/responder      recebe a pergunta e devolve a resposta em campos
+    GET    /api/metricas       contagem de atendimentos por assunto
+    GET    /api/solicitacoes   fila de trabalho humano
+    POST   /api/solicitacoes/{protocolo}/resolver  fecha um item da fila
+    GET    /api/base/documentos            os documentos da base de conhecimento
+    POST   /api/base/documentos            grava um .md e o indexa na hora
+    DELETE /api/base/documentos/{arquivo}  remove o arquivo e os chunks dele
 
 Responder faz três coisas: pede a resposta ao atendente, registra o
 atendimento para a contagem por assunto e, quando o caso precisa de uma
@@ -20,7 +22,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from app import assistente, dados, db, documentos, log
+from app import assistente, dados, db, documentos, log, retrieval
 from app.schemas import TipoDeAtendimento
 from app.config import (
     MODELOS,
@@ -79,6 +81,18 @@ class PerguntaDoCliente(BaseModel):
     temperatura: float = Field(
         default=TEMPERATURA_PADRAO, ge=TEMPERATURA_MINIMA, le=TEMPERATURA_MAXIMA
     )
+
+
+class DocumentoNovo(BaseModel):
+    """Corpo do POST /api/base/documentos.
+
+    O conteúdo vai como texto no JSON, e não como upload multipart, porque um
+    `.md` é texto: quem envia lê o arquivo e manda o conteúdo, sem precisar de
+    codificação binária nem de dependência a mais para interpretá-la.
+    """
+
+    arquivo: str = Field(min_length=1, pattern=r".+\.md$")
+    conteudo: str = Field(min_length=1)
 
 
 @app.get("/api/saude")
@@ -190,9 +204,60 @@ def resolver(protocolo: str):
 
 @app.get("/api/base/documentos")
 def base_documentos():
-    """Os documentos da base de conhecimento, com arquivo e título."""
-    itens = documentos.listar()
-    return {"itens": itens, "total": len(itens)}
+    """Os documentos da base, com quantos chunks cada um tem indexado.
+
+    A pasta de `.md` e a base vetorial são duas coisas, e podem divergir: um
+    documento recém-copiado para a pasta aparece aqui com zero chunks até alguém
+    indexar. Mostrar as duas contagens lado a lado é o que torna essa diferença
+    visível em vez de surpreendente.
+    """
+    chunks_por_arquivo = retrieval.contar_por_arquivo()
+    itens = [
+        {**item, "chunks": chunks_por_arquivo.get(item["arquivo"], 0)}
+        for item in documentos.listar()
+    ]
+    return {
+        "itens": itens,
+        "total": len(itens),
+        "chunks_indexados": sum(chunks_por_arquivo.values()),
+    }
+
+
+@app.post("/api/base/documentos")
+def enviar_documento(documento: DocumentoNovo):
+    """Grava um `.md` na base e o indexa na hora.
+
+    Indexar aqui, e não por script, é o que faz um documento novo passar a valer
+    na resposta seguinte. As etapas voltam como lista para quem enviou acompanhar
+    o que aconteceu: recebido, partido em chunks, indexado.
+
+    Remove os chunks antigos antes de indexar. Sem isso, uma versão nova mais
+    curta que a anterior deixaria para trás os chunks das posições que já não
+    existem, e a busca continuaria encontrando texto que foi apagado.
+    """
+    arquivo, titulo = documentos.gravar(documento.arquivo, documento.conteudo)
+    retrieval.remover(arquivo)
+    chunks = retrieval.indexar([(arquivo, titulo, documento.conteudo)])
+
+    return {
+        "arquivo": arquivo,
+        "titulo": titulo,
+        "chunks": chunks,
+        "etapas": [
+            f"documento recebido: {arquivo} ({len(documento.conteudo)} caracteres)",
+            f"partido em {chunks} chunk(s) de até {retrieval.CHUNK_SIZE} caracteres",
+            f"indexado com {retrieval.EMBEDDING_MODEL}",
+        ],
+    }
+
+
+@app.delete("/api/base/documentos/{arquivo}")
+def remover_documento(arquivo: str):
+    """Apaga o `.md` e os chunks dele. As duas coisas, ou a base fica incoerente."""
+    if not documentos.remover(arquivo):
+        raise HTTPException(status_code=404, detail="Documento não encontrado.")
+
+    return {"arquivo": arquivo, "chunks_removidos": retrieval.remover(arquivo)}
 
 
 @app.get("/api/metricas")

@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 
+import BaseDeConhecimento from './BaseDeConhecimento'
+
 const PERGUNTAS_DE_EXEMPLO = [
   'Meu pedido chegou descongelado, o que eu faço?',
   'Como funciona a troca de um produto?',
@@ -189,6 +191,13 @@ export default function App() {
           </button>
           <button
             type="button"
+            className={abaAtiva === 'base' ? 'ativo' : ''}
+            onClick={() => setAbaAtiva('base')}
+          >
+            Base de conhecimento
+          </button>
+          <button
+            type="button"
             className={abaAtiva === 'solicitacoes' ? 'ativo' : ''}
             onClick={() => setAbaAtiva('solicitacoes')}
           >
@@ -210,7 +219,9 @@ export default function App() {
       </header>
 
       <main className="corpo">
-        {abaAtiva === 'solicitacoes' ? (
+        {abaAtiva === 'base' ? (
+          <BaseDeConhecimento />
+        ) : abaAtiva === 'solicitacoes' ? (
           <section className="dashboard">
             <h2 className="secao">Fila de atendimento</h2>
             {!solicitacoes ? (

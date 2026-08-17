@@ -133,20 +133,50 @@ def buscar(pergunta: str, k: int = TOP_K) -> list[Document]:
     return trechos
 
 
-def contar() -> int:
-    """Quantos chunks estão indexados agora.
+def contar_por_arquivo() -> dict[str, int]:
+    """Quantos chunks cada documento tem na base, pelo metadata gravado.
+
+    É o que permite mostrar o que está *indexado*, e não só o que está no disco:
+    os dois podem divergir, e a divergência é a informação útil.
 
     Lê a tabela interna do langchain-postgres porque o PGVector não expõe
-    contagem. Base que nunca foi criada conta zero em vez de estourar.
+    contagem. Base que nunca foi criada devolve vazio em vez de estourar.
     """
     sql = (
-        "SELECT count(*) FROM langchain_pg_embedding e "
+        "SELECT e.cmetadata->>'arquivo' AS arquivo, count(*) "
+        "FROM langchain_pg_embedding e "
         "JOIN langchain_pg_collection c ON c.uuid = e.collection_id "
-        "WHERE c.name = %s"
+        "WHERE c.name = %s GROUP BY arquivo"
     )
     try:
         with psycopg.connect(db.dsn(), connect_timeout=5) as conexao:
-            return conexao.execute(sql, (COLLECTION,)).fetchone()[0]
+            return dict(conexao.execute(sql, (COLLECTION,)).fetchall())
+    except Exception:
+        return {}
+
+
+def contar() -> int:
+    """O total de chunks indexados."""
+    return sum(contar_por_arquivo().values())
+
+
+def remover(arquivo: str) -> int:
+    """Apaga os chunks de um documento e devolve quantos saíram.
+
+    Vai por SQL porque a exclusão é por metadata, não por id: quantos chunks o
+    documento gerou é coisa que só a indexação sabia.
+    """
+    sql = (
+        "DELETE FROM langchain_pg_embedding e "
+        "USING langchain_pg_collection c "
+        "WHERE e.collection_id = c.uuid AND c.name = %s "
+        "AND e.cmetadata->>'arquivo' = %s"
+    )
+    try:
+        with psycopg.connect(db.dsn(), connect_timeout=5) as conexao:
+            removidos = conexao.execute(sql, (COLLECTION, arquivo)).rowcount
+        logger.info("removidos %d chunk(s) de %s", removidos, arquivo)
+        return removidos
     except Exception:
         return 0
 
