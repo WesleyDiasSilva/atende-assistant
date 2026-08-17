@@ -4,6 +4,10 @@
 Descreve os campos que a resposta sempre tem. Quem consome deixa de receber um
 texto solto e passa a receber um objeto com posições fixas — o que permite ao
 sistema usar a resposta sem procurar informação no meio da frase.
+
+São dois contratos, e a fronteira entre eles importa: `RespostaAtendimento` é o
+que o **modelo** preenche, `Atendimento` é o que o **nosso código** observou em
+volta da chamada.
 """
 from enum import Enum
 from typing import Optional
@@ -60,3 +64,16 @@ class RespostaAtendimento(BaseModel):
             "o que o atendente precisa resolver. Vazio nos demais casos."
         ),
     )
+
+
+class Atendimento(BaseModel):
+    """A resposta do modelo, mais o que o nosso código mediu em volta dela.
+
+    Fica separado de `RespostaAtendimento` porque a origem do dado é diferente:
+    lá são campos que o modelo preenche, aqui é observação do código. Contagem
+    de tokens não é opinião do modelo — é o número que o Bedrock informou. Pedir
+    que ele mesmo declarasse isso seria pedir que inventasse.
+    """
+
+    resposta: RespostaAtendimento
+    tokens_de_entrada: int = 0

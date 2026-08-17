@@ -15,21 +15,27 @@ Responder a uma pergunta acontece em duas etapas.
 As duas etapas são separadas porque `bind_tools` e `with_structured_output`
 usam o mesmo mecanismo por baixo: pedir as duas coisas na mesma chamada é
 frágil.
+
+Antes das duas, uma decisão: o **modo de conhecimento** define quanto da base de
+documentos entra na conversa. É a única coisa na interface que muda o que o
+atendente sabe — modelo, perfil e temperatura mudam como ele responde.
 """
 import logging
 
 from botocore.exceptions import ClientError
 from langchain_aws import ChatBedrockConverse
-from langchain_core.messages import ToolMessage
+from langchain_core.messages import SystemMessage, ToolMessage
 from langchain_core.prompts import ChatPromptTemplate
 
+from app import documentos
 from app.config import (
     MODELOS,
+    MODO_PADRAO,
     PERFIS_DE_ATENDIMENTO,
     REGIAO_AWS,
     TEMPERATURA_PADRAO,
 )
-from app.schemas import RespostaAtendimento, TipoDeAtendimento
+from app.schemas import Atendimento, RespostaAtendimento, TipoDeAtendimento
 from app.tools import FERRAMENTAS, FERRAMENTAS_POR_NOME
 
 # A mensagem de sistema define quem o atendente é. Tem uma parte fixa (a persona)
@@ -49,6 +55,14 @@ prompt = ChatPromptTemplate.from_messages(
     ]
 )
 
+# Abre a mensagem que carrega os documentos. Fica separada de MENSAGEM_SISTEMA
+# porque ela só existe quando há contexto: sem documento nenhum, não há o que
+# instruir.
+CABECALHO_DO_CONTEXTO = """Os documentos abaixo são a base de conhecimento da empresa. Use-os para responder ao cliente.
+
+CONTEXTO:
+"""
+
 # Teto de idas ao modelo numa mesma pergunta. O ciclo de ferramenta é um laço,
 # e laço sem limite é onde um agente trava: o modelo pode continuar pedindo
 # ferramenta indefinidamente. Quatro passos cobrem os casos reais deste
@@ -66,6 +80,44 @@ def montar_modelo(modelo: str, temperatura: float) -> ChatBedrockConverse:
         temperature=temperatura,
         max_tokens=1024,
     )
+
+
+def _trechos_do_modo(modo: str) -> list[tuple[str, str]]:
+    """O que vai no contexto, conforme o modo escolhido: [(arquivo, conteudo)].
+
+    No modo sem conhecimento a lista é vazia e nada muda em relação ao
+    comportamento anterior. No stuffing, a base inteira entra a cada pergunta —
+    é o caminho mais curto para o atendente acertar, e o mais caro.
+    """
+    if modo == "stuffing":
+        return [(arquivo, conteudo) for arquivo, _, conteudo in documentos.carregar()]
+    return []
+
+
+def _mensagem_de_contexto(trechos: list[tuple[str, str]]) -> SystemMessage:
+    """Empacota os trechos numa mensagem de sistema a mais.
+
+    O contexto **não** entra como variável do ChatPromptTemplate, e isso não é
+    estilo: um `{prazo}` escrito dentro de um documento seria lido como variável
+    de template e a chamada quebraria com KeyError. Documento é dado de entrada,
+    e dado de entrada não passa por formatação de template.
+
+    O nome do arquivo acompanha cada trecho porque é ele que vira a fonte citada
+    na resposta: sem essa marca, o modelo não tem como dizer de onde tirou o que
+    disse.
+    """
+    corpo = "\n\n".join(f"[{arquivo}]\n{conteudo}" for arquivo, conteudo in trechos)
+    return SystemMessage(content=CABECALHO_DO_CONTEXTO + corpo)
+
+
+def _tokens_de_entrada(resposta_do_modelo) -> int:
+    """Quantos tokens o Bedrock contou na entrada desta chamada.
+
+    É a medida do que o contexto custa. Interessa a primeira ida ao modelo, que
+    é a que carrega os documentos; as seguintes só acrescentam o resultado das
+    ferramentas.
+    """
+    return (resposta_do_modelo.usage_metadata or {}).get("input_tokens", 0)
 
 
 def _executar_ferramenta(chamada: dict) -> str:
@@ -94,13 +146,18 @@ def responder(
     perfil: str,
     modelo: str,
     temperatura: float = TEMPERATURA_PADRAO,
-) -> RespostaAtendimento:
+    modo: str = MODO_PADRAO,
+) -> Atendimento:
     """Responde ao cliente, usando ferramentas quando precisa de dado externo.
 
     São duas etapas, e a separação é proposital: `bind_tools` e
     `with_structured_output` disputam o mesmo mecanismo por baixo, então
     primeiro roda o ciclo de ferramentas até o modelo parar de pedir, e só
     depois se exige o formato final da resposta.
+
+    O `modo` decide o que o atendente sabe. Ele é ortogonal às ferramentas: o
+    contexto responde sobre política e produto, a ferramenta responde sobre o
+    pedido daquele cliente. As duas fontes convivem na mesma conversa.
     """
     model = montar_modelo(modelo, temperatura)
     model_com_ferramentas = model.bind_tools(FERRAMENTAS)
@@ -110,10 +167,22 @@ def responder(
         pergunta=pergunta,
     )
 
+    # A mensagem de contexto entra depois do format_messages, e é aí que ela
+    # escapa da formatação de template. Vai antes da mensagem do cliente para o
+    # modelo ler a base antes de ler a pergunta.
+    trechos = _trechos_do_modo(modo)
+    if trechos:
+        mensagens.insert(-1, _mensagem_de_contexto(trechos))
+
+    tokens_de_entrada = 0
+
     try:
-        for _ in range(MAXIMO_DE_PASSOS):
+        for passo in range(MAXIMO_DE_PASSOS):
             resposta_do_modelo = model_com_ferramentas.invoke(mensagens)
             mensagens.append(resposta_do_modelo)
+
+            if passo == 0:
+                tokens_de_entrada = _tokens_de_entrada(resposta_do_modelo)
 
             # Sem pedido de ferramenta, o modelo já tem o que precisa.
             if not resposta_do_modelo.tool_calls:
@@ -131,7 +200,8 @@ def responder(
                 )
 
         # Etapa final: a mesma conversa, agora exigindo o formato de saída.
-        return model.with_structured_output(RespostaAtendimento).invoke(mensagens)
+        resposta = model.with_structured_output(RespostaAtendimento).invoke(mensagens)
+        return Atendimento(resposta=resposta, tokens_de_entrada=tokens_de_entrada)
     except ClientError as erro:
         # O LangChain não embrulha os erros do Bedrock: eles continuam sendo do
         # botocore, e ClientError é a classe-mãe de todos. Por isso um único
@@ -139,9 +209,11 @@ def responder(
         #
         # A falha também sai no formato do schema: quem consome a API trata uma
         # forma só, com erro ou sem erro.
-        return RespostaAtendimento(
-            resposta=traduzir_erro_do_bedrock(erro, MODELOS[modelo]["model_id"]),
-            tipo=TipoDeAtendimento.OUTRO,
+        return Atendimento(
+            resposta=RespostaAtendimento(
+                resposta=traduzir_erro_do_bedrock(erro, MODELOS[modelo]["model_id"]),
+                tipo=TipoDeAtendimento.OUTRO,
+            )
         )
 
 

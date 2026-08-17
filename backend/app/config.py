@@ -43,6 +43,30 @@ TEMPERATURA_MINIMA = 0.0
 TEMPERATURA_MAXIMA = 1.0
 TEMPERATURA_PASSO = 0.1
 
+# Quanto da base de conhecimento o atendente recebe junto com a pergunta. Ao
+# contrário do perfil, isto muda *o que ele sabe* — e é o único controle da
+# interface capaz de mudar o conteúdo de uma resposta.
+#
+# O modo é um dial de quantidade de contexto: nada, tudo, ou só o que a pergunta
+# pede. Os três ficam ligáveis lado a lado de propósito: a mesma pergunta nos
+# três modos mostra a diferença sem nenhuma explicação adicional.
+MODOS_DE_CONHECIMENTO = {
+    "sem_conhecimento": {
+        "nome": "Sem conhecimento",
+        "descricao": "Só o prompt. O atendente não vê nenhum documento.",
+    },
+    "stuffing": {
+        "nome": "Base inteira no prompt",
+        "descricao": "Todos os documentos vão no contexto, a cada pergunta.",
+    },
+    "rag": {
+        "nome": "Busca na base (RAG)",
+        "descricao": "Só os trechos que a pergunta recupera vão no contexto.",
+    },
+}
+
+MODO_PADRAO = "sem_conhecimento"
+
 # Cada perfil injeta uma instrução de tom diferente na mensagem de sistema.
 # Muda como o atendente escreve, não o que ele sabe.
 PERFIS_DE_ATENDIMENTO = {

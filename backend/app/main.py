@@ -2,7 +2,7 @@
 """API do atendente de pedidos.
 
     GET  /api/saude         estado da API
-    GET  /api/configuracao  modelos, perfis e faixa de temperatura
+    GET  /api/configuracao  modelos, perfis, modos de conhecimento e temperatura
     POST /api/responder     recebe a pergunta e devolve a resposta em campos
     GET  /api/metricas      contagem de atendimentos por assunto
     GET  /api/solicitacoes  fila de trabalho humano
@@ -24,6 +24,8 @@ from app import assistente, dados, documentos
 from app.schemas import TipoDeAtendimento
 from app.config import (
     MODELOS,
+    MODO_PADRAO,
+    MODOS_DE_CONHECIMENTO,
     PERFIS_DE_ATENDIMENTO,
     TEMPERATURA_MAXIMA,
     TEMPERATURA_MINIMA,
@@ -61,6 +63,7 @@ class PerguntaDoCliente(BaseModel):
     pergunta: str = Field(min_length=1)
     perfil: str = "padrao"
     modelo: str = "rapido"
+    modo: str = MODO_PADRAO
     temperatura: float = Field(
         default=TEMPERATURA_PADRAO, ge=TEMPERATURA_MINIMA, le=TEMPERATURA_MAXIMA
     )
@@ -92,6 +95,11 @@ def configuracao():
             {"id": chave, "nome": perfil["nome"]}
             for chave, perfil in PERFIS_DE_ATENDIMENTO.items()
         ],
+        "modos": [
+            {"id": chave, "nome": modo["nome"], "descricao": modo["descricao"]}
+            for chave, modo in MODOS_DE_CONHECIMENTO.items()
+        ],
+        "modo_padrao": MODO_PADRAO,
         "temperatura": {
             "padrao": TEMPERATURA_PADRAO,
             "minima": TEMPERATURA_MINIMA,
@@ -107,13 +115,17 @@ def responder(pergunta_do_cliente: PerguntaDoCliente):
         raise HTTPException(status_code=400, detail="Perfil de atendimento desconhecido.")
     if pergunta_do_cliente.modelo not in MODELOS:
         raise HTTPException(status_code=400, detail="Modelo desconhecido.")
+    if pergunta_do_cliente.modo not in MODOS_DE_CONHECIMENTO:
+        raise HTTPException(status_code=400, detail="Modo de conhecimento desconhecido.")
 
-    resposta = assistente.responder(
+    atendimento = assistente.responder(
         pergunta_do_cliente.pergunta,
         pergunta_do_cliente.perfil,
         pergunta_do_cliente.modelo,
         pergunta_do_cliente.temperatura,
+        pergunta_do_cliente.modo,
     )
+    resposta = atendimento.resposta
     # O campo `tipo` da resposta é o que torna a contagem por assunto possível:
     # a classificação chega junto com o texto, sem uma segunda chamada ao modelo.
     dados.registrar_atendimento(
@@ -134,7 +146,14 @@ def responder(pergunta_do_cliente: PerguntaDoCliente):
 
     # O retorno é uma instância do schema, não texto: a API devolve os campos e
     # a interface lê cada um pelo nome, sem procurar informação dentro da frase.
-    return resposta.model_dump()
+    #
+    # Os dois contratos saem achatados num JSON só. A interface não precisa saber
+    # que um campo veio do modelo e o outro da medição — mas o código precisa, e
+    # é por isso que eles são separados até aqui.
+    return {
+        **resposta.model_dump(),
+        "tokens_de_entrada": atendimento.tokens_de_entrada,
+    }
 
 
 @app.get("/api/solicitacoes")

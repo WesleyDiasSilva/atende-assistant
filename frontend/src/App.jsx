@@ -15,6 +15,7 @@ const NOME_DO_TIPO = {
 }
 
 const formatarSegundos = (ms) => `${(ms / 1000).toFixed(1).replace('.', ',')} s`
+const formatarTokens = (valor) => valor.toLocaleString('pt-BR')
 const formatarTemperatura = (valor) => valor.toFixed(1).replace('.', ',')
 const formatarHorario = (iso) =>
   new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
@@ -27,6 +28,9 @@ export default function App() {
 
   const [modeloEscolhido, setModeloEscolhido] = useState('rapido')
   const [perfilEscolhido, setPerfilEscolhido] = useState('padrao')
+  // Quanto da base de conhecimento o atendente recebe. É o único controle que
+  // muda o que ele sabe, e por isso o único que pode mudar o conteúdo da resposta.
+  const [modoEscolhido, setModoEscolhido] = useState('sem_conhecimento')
   const [temperatura, setTemperatura] = useState(0)
 
   const [textoDigitado, setTextoDigitado] = useState('')
@@ -77,8 +81,9 @@ export default function App() {
       .then((dados) => {
         setConfiguracao(dados)
         if (dados.temperatura) setTemperatura(dados.temperatura.padrao)
+        if (dados.modo_padrao) setModoEscolhido(dados.modo_padrao)
       })
-      .catch(() => setConfiguracao({ modelos: [], perfis: [] }))
+      .catch(() => setConfiguracao({ modelos: [], perfis: [], modos: [] }))
   }, [])
 
   // Mantém a última mensagem visível conforme a conversa cresce.
@@ -88,6 +93,7 @@ export default function App() {
 
   const modeloAtual = configuracao?.modelos?.find((m) => m.id === modeloEscolhido)
   const perfilAtual = configuracao?.perfis?.find((p) => p.id === perfilEscolhido)
+  const modoAtual = configuracao?.modos?.find((m) => m.id === modoEscolhido)
   const faixaDeTemperatura =
     configuracao?.temperatura ?? { minima: 0, maxima: 1, passo: 0.1 }
 
@@ -109,6 +115,7 @@ export default function App() {
           pergunta,
           perfil: perfilEscolhido,
           modelo: modeloEscolhido,
+          modo: modoEscolhido,
           temperatura,
         }),
       })
@@ -127,6 +134,10 @@ export default function App() {
           duracaoEmMs: performance.now() - inicio,
           nomeDoModelo: modeloAtual?.nome,
           nomeDoPerfil: perfilAtual?.nome,
+          nomeDoModo: modoAtual?.nome,
+          // O que o contexto custou nesta pergunta. É o número que compara os
+          // modos: a mesma resposta pode sair por um décimo dos tokens.
+          tokensDeEntrada: resposta.ok ? dados.tokens_de_entrada : null,
           temperaturaUsada: temperatura,
         },
       ])
@@ -330,7 +341,8 @@ export default function App() {
                         e repetir a pergunta, a diferença fica documentada na tela. */}
                     {mensagem.autor === 'atendente' && !mensagem.houveErro && (
                       <span className="rodape-msg">
-                        {mensagem.nomeDoModelo} · {mensagem.nomeDoPerfil} · temp{' '}
+                        {mensagem.nomeDoModelo} · {mensagem.nomeDoPerfil} ·{' '}
+                        {mensagem.nomeDoModo} · temp{' '}
                         <span className="num">
                           {formatarTemperatura(mensagem.temperaturaUsada)}
                         </span>{' '}
@@ -338,6 +350,15 @@ export default function App() {
                         <span className="num">
                           {formatarSegundos(mensagem.duracaoEmMs)}
                         </span>
+                        {mensagem.tokensDeEntrada > 0 && (
+                          <>
+                            {' · '}
+                            <span className="num">
+                              {formatarTokens(mensagem.tokensDeEntrada)}
+                            </span>{' '}
+                            tokens de entrada
+                          </>
+                        )}
                       </span>
                     )}
                   </li>
@@ -396,6 +417,29 @@ export default function App() {
             </div>
           </div>
 
+          {/* Fica acima do perfil de propósito: é o controle de maior efeito.
+              Perfil e temperatura mexem na redação; este mexe no conteúdo. */}
+          <div className="campo">
+            <label>Conhecimento</label>
+            <div className="segmentado">
+              {configuracao?.modos?.map((modo) => (
+                <button
+                  key={modo.id}
+                  type="button"
+                  className={modoEscolhido === modo.id ? 'ativo' : ''}
+                  onClick={() => setModoEscolhido(modo.id)}
+                >
+                  <strong>{modo.nome}</strong>
+                  <span>{modo.descricao}</span>
+                </button>
+              ))}
+            </div>
+            <p className="dica">
+              Muda o que o atendente sabe. A mesma pergunta pode voltar com outra
+              resposta.
+            </p>
+          </div>
+
           <div className="campo">
             <label>Perfil de atendimento</label>
             <div className="segmentado">
@@ -445,6 +489,14 @@ export default function App() {
           <h2 className="secao">Chain ativa</h2>
           <div className="inspetor">
             <div className="pipe">
+              {/* O modo de conhecimento acrescenta um passo antes do prompt: no
+                  stuffing a base inteira, no RAG só o que a busca trouxe. */}
+              {modoEscolhido !== 'sem_conhecimento' && (
+                <>
+                  <span>{modoEscolhido === 'rag' ? 'busca' : 'base'}</span>
+                  <em>|</em>
+                </>
+              )}
               <span>prompt</span>
               <em>|</em>
               <span>model</span>
