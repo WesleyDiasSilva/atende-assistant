@@ -16,6 +16,13 @@ const NOME_DO_TIPO = {
   outro: 'Outro',
 }
 
+// O passo que cada modo acrescenta antes do prompt, no inspetor da chain.
+const NOME_DO_PASSO_DE_CONTEXTO = {
+  stuffing: 'base',
+  rag: 'busca',
+  rag_gerenciado: 'busca AWS',
+}
+
 const formatarSegundos = (ms) => `${(ms / 1000).toFixed(1).replace('.', ',')} s`
 const formatarTokens = (valor) => valor.toLocaleString('pt-BR')
 const formatarTemperatura = (valor) => valor.toFixed(1).replace('.', ',')
@@ -463,10 +470,19 @@ export default function App() {
                   key={modo.id}
                   type="button"
                   className={modoEscolhido === modo.id ? 'ativo' : ''}
+                  // Um modo pode depender de recurso que esta instalação não tem.
+                  // O botão continua na tela, desabilitado, com o motivo no title:
+                  // esconder o modo faria parecer que ele não existe.
+                  disabled={modo.disponivel === false}
+                  title={modo.indisponivel_porque || undefined}
                   onClick={() => setModoEscolhido(modo.id)}
                 >
                   <strong>{modo.nome}</strong>
-                  <span>{modo.descricao}</span>
+                  <span>
+                    {modo.disponivel === false
+                      ? modo.indisponivel_porque
+                      : modo.descricao}
+                  </span>
                 </button>
               ))}
             </div>
@@ -526,10 +542,11 @@ export default function App() {
           <div className="inspetor">
             <div className="pipe">
               {/* O modo de conhecimento acrescenta um passo antes do prompt: no
-                  stuffing a base inteira, no RAG só o que a busca trouxe. */}
+                  stuffing a base inteira, nos dois modos de busca só o que o
+                  retriever trouxe — o nosso ou o da AWS. */}
               {modoEscolhido !== 'sem_conhecimento' && (
                 <>
-                  <span>{modoEscolhido === 'rag' ? 'busca' : 'base'}</span>
+                  <span>{NOME_DO_PASSO_DE_CONTEXTO[modoEscolhido]}</span>
                   <em>|</em>
                 </>
               )}

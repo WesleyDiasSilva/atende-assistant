@@ -43,13 +43,17 @@ TEMPERATURA_MINIMA = 0.0
 TEMPERATURA_MAXIMA = 1.0
 TEMPERATURA_PASSO = 0.1
 
-# Quanto da base de conhecimento o atendente recebe junto com a pergunta. Ao
-# contrário do perfil, isto muda *o que ele sabe* — e é o único controle da
-# interface capaz de mudar o conteúdo de uma resposta.
+# Quanto da base de conhecimento o atendente recebe junto com a pergunta, e por
+# qual caminho. Ao contrário do perfil, isto muda *o que ele sabe* — e é o único
+# controle da interface capaz de mudar o conteúdo de uma resposta.
 #
-# O modo é um dial de quantidade de contexto: nada, tudo, ou só o que a pergunta
-# pede. Os três ficam ligáveis lado a lado de propósito: a mesma pergunta nos
-# três modos mostra a diferença sem nenhuma explicação adicional.
+# Os três primeiros modos são um dial de quantidade de contexto: nada, tudo, ou só
+# o que a pergunta pede. O quarto muda outra coisa: a quantidade é a mesma do
+# terceiro, mas quem faz a busca é um serviço gerenciado em vez do nosso código.
+#
+# Ficam ligáveis lado a lado de propósito. A mesma pergunta nos quatro modos
+# mostra a diferença sem precisar de explicação — e as duas últimas colunas
+# isolam exatamente uma variável: o retriever.
 MODOS_DE_CONHECIMENTO = {
     "sem_conhecimento": {
         "nome": "Sem conhecimento",
@@ -62,6 +66,10 @@ MODOS_DE_CONHECIMENTO = {
     "rag": {
         "nome": "Busca na base (RAG)",
         "descricao": "Só os trechos que a pergunta recupera vão no contexto.",
+    },
+    "rag_gerenciado": {
+        "nome": "Busca gerenciada (Knowledge Base)",
+        "descricao": "A mesma busca, feita por um serviço da AWS em vez de pelo nosso código.",
     },
 }
 

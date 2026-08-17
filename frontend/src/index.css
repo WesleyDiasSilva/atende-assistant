@@ -527,7 +527,10 @@ input[type='range']:focus-visible {
   cursor: pointer;
   transition: border-color 0.15s, background 0.15s;
 }
-.segmentado button:hover:not(.ativo) { border-color: var(--linha-forte); }
+.segmentado button:hover:not(.ativo):not(:disabled) { border-color: var(--linha-forte); }
+/* Modo que esta instalação não tem: visível, para se saber que existe, mas
+   claramente fora de alcance. */
+.segmentado button:disabled { opacity: 0.5; cursor: not-allowed; }
 .segmentado button.ativo {
   border-color: var(--acento);
   background: var(--acento-fraco);

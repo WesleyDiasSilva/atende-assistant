@@ -27,7 +27,7 @@ from langchain_aws import ChatBedrockConverse
 from langchain_core.messages import SystemMessage, ToolMessage
 from langchain_core.prompts import ChatPromptTemplate
 
-from app import documentos, retrieval
+from app import documentos, retrieval, retrieval_gerenciado
 from app.config import (
     MODELOS,
     MODO_PADRAO,
@@ -83,6 +83,10 @@ CONTEXTO:
 # atendimento com folga.
 MAXIMO_DE_PASSOS = 4
 
+# Os modos em que um retriever escolheu os trechos — e que por isso têm fonte a
+# declarar. Os dois só diferem em quem executa a busca.
+MODOS_COM_BUSCA = ("rag", "rag_gerenciado")
+
 logger = logging.getLogger(__name__)
 
 
@@ -101,17 +105,26 @@ def _trechos_do_modo(modo: str, pergunta: str) -> list[tuple[str, str]]:
 
     No modo sem conhecimento a lista é vazia e nada muda em relação ao
     comportamento anterior. No stuffing, a base inteira entra a cada pergunta —
-    é o caminho mais curto para o atendente acertar, e o mais caro. No RAG, a
-    busca decide: entram só os trechos mais próximos da pergunta.
+    é o caminho mais curto para o atendente acertar, e o mais caro. Nos dois modos
+    de busca, quem decide são os trechos mais próximos da pergunta.
+
+    Os dois últimos ramos são de propósito quase idênticos: trocam o retriever e
+    mais nada. Tudo o que vem depois desta função — a mensagem de contexto, a
+    instrução de groundedness, o ciclo de ferramenta — não sabe qual dos dois
+    respondeu. É o que faz a comparação medir o retriever, e não o prompt.
     """
     if modo == "stuffing":
         return [(arquivo, conteudo) for arquivo, _, conteudo in documentos.carregar()]
     if modo == "rag":
-        return [
-            (trecho.metadata["arquivo"], trecho.page_content)
-            for trecho in retrieval.buscar(pergunta)
-        ]
+        return _do_retriever(retrieval.buscar(pergunta))
+    if modo == "rag_gerenciado":
+        return _do_retriever(retrieval_gerenciado.buscar(pergunta))
     return []
+
+
+def _do_retriever(trechos: list) -> list[tuple[str, str]]:
+    """Converte os `Document` de qualquer um dos dois retrievers no par do contexto."""
+    return [(trecho.metadata["arquivo"], trecho.page_content) for trecho in trechos]
 
 
 def _mensagem_de_contexto(trechos: list[tuple[str, str]]) -> SystemMessage:
@@ -134,10 +147,13 @@ def _fontes(modo: str, trechos: list[tuple[str, str]]) -> list[str]:
     """Os documentos que a busca recuperou, sem repetir e na ordem do ranking.
 
     Dois trechos podem vir do mesmo arquivo, e o cliente não precisa ver o nome
-    duas vezes. Só o modo RAG tem fonte a declarar: no stuffing entrou tudo, e
-    listar a base inteira não diria de onde a resposta saiu.
+    duas vezes. Só os modos de busca têm fonte a declarar: no stuffing entrou
+    tudo, e listar a base inteira não diria de onde a resposta saiu.
+
+    Quem preenche é o nosso código nos dois casos — inclusive no gerenciado, onde
+    a busca é de outro. Fonte que o código conhece não pode ser inventada.
     """
-    if modo != "rag":
+    if modo not in MODOS_COM_BUSCA:
         return []
     return list(dict.fromkeys(arquivo for arquivo, _ in trechos))
 

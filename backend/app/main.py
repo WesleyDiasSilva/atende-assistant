@@ -37,6 +37,7 @@ from app import (  # noqa: E402  (depois do load_dotenv, de propósito)
     documentos,
     log,
     retrieval,
+    retrieval_gerenciado,
 )
 from app.config import (  # noqa: E402
     MODELOS,
@@ -116,6 +117,23 @@ def saude():
     return {"status": "ok"}
 
 
+MOTIVO_KB_AUSENTE = (
+    "Defina KNOWLEDGE_BASE_ID no .env com o id de um Knowledge Base do Amazon "
+    "Bedrock. Sem ele, use o modo de busca na base, que roda no pgvector local."
+)
+
+
+def _disponibilidade(modo: str) -> dict:
+    """Se o modo pode ser usado agora, e por que não, quando não pode.
+
+    Só o modo gerenciado tem como estar indisponível: os outros três dependem de
+    código e de dados que vêm no próprio repositório.
+    """
+    if modo == "rag_gerenciado" and not retrieval_gerenciado.esta_configurado():
+        return {"disponivel": False, "indisponivel_porque": MOTIVO_KB_AUSENTE}
+    return {"disponivel": True, "indisponivel_porque": None}
+
+
 @app.get("/api/configuracao")
 def configuracao():
     """Entrega o catálogo para a interface montar os controles.
@@ -137,8 +155,17 @@ def configuracao():
             {"id": chave, "nome": perfil["nome"]}
             for chave, perfil in PERFIS_DE_ATENDIMENTO.items()
         ],
+        # Cada modo diz se está disponível nesta instalação. O gerenciado depende
+        # de um recurso provisionado numa conta AWS: quem clona o repositório sem
+        # isso vê o modo na tela, desabilitado e com o motivo — em vez de clicar e
+        # receber um erro que não explica nada.
         "modos": [
-            {"id": chave, "nome": modo["nome"], "descricao": modo["descricao"]}
+            {
+                "id": chave,
+                "nome": modo["nome"],
+                "descricao": modo["descricao"],
+                **_disponibilidade(chave),
+            }
             for chave, modo in MODOS_DE_CONHECIMENTO.items()
         ],
         "modo_padrao": MODO_PADRAO,
@@ -159,6 +186,8 @@ def responder(pergunta_do_cliente: PerguntaDoCliente):
         raise HTTPException(status_code=400, detail="Modelo desconhecido.")
     if pergunta_do_cliente.modo not in MODOS_DE_CONHECIMENTO:
         raise HTTPException(status_code=400, detail="Modo de conhecimento desconhecido.")
+    if not _disponibilidade(pergunta_do_cliente.modo)["disponivel"]:
+        raise HTTPException(status_code=400, detail=MOTIVO_KB_AUSENTE)
 
     atendimento = assistente.responder(
         pergunta_do_cliente.pergunta,
