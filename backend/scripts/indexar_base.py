@@ -23,7 +23,7 @@ def main() -> None:
     db.garantir_extensao_vector()
 
     base = documentos.carregar()
-    print(f"{len(base)} documento(s) em {documentos.PASTA}")
+    print(f"{len(base)} documento(s) em {documentos.PASTA_DA_BASE}")
 
     chunks = retrieval.indexar(base)
     print(

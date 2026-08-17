@@ -22,9 +22,23 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from app import assistente, dados, db, documentos, log, retrieval
-from app.schemas import TipoDeAtendimento
-from app.config import (
+# Lê o .env da raiz do projeto **antes** de importar os nossos módulos, e a ordem
+# é obrigatória: `config.py` e `retrieval.py` leem `os.getenv` no corpo do módulo,
+# ou seja, no momento do import. Importar primeiro e carregar o .env depois faria
+# cada um deles ficar com o valor padrão para sempre — e trocar `EMBEDDING_MODEL`
+# no .env passaria a não ter efeito nenhum, que é justamente a divergência entre
+# indexação e busca que o retrieval.py existe para evitar.
+load_dotenv()
+
+from app import (  # noqa: E402  (depois do load_dotenv, de propósito)
+    assistente,
+    dados,
+    db,
+    documentos,
+    log,
+    retrieval,
+)
+from app.config import (  # noqa: E402
     MODELOS,
     MODO_PADRAO,
     MODOS_DE_CONHECIMENTO,
@@ -34,9 +48,7 @@ from app.config import (
     TEMPERATURA_PADRAO,
     TEMPERATURA_PASSO,
 )
-
-# Lê o .env da raiz do projeto, onde fica a chave do Bedrock.
-load_dotenv()
+from app.schemas import TipoDeAtendimento  # noqa: E402
 
 # Liga o log da aplicação: é nele que aparecem a execução de cada ferramenta, as
 # etapas da indexação e o ranking de cada busca.
@@ -89,9 +101,13 @@ class DocumentoNovo(BaseModel):
     O conteúdo vai como texto no JSON, e não como upload multipart, porque um
     `.md` é texto: quem envia lê o arquivo e manda o conteúdo, sem precisar de
     codificação binária nem de dependência a mais para interpretá-la.
+
+    A extensão não é validada aqui por `pattern`: a mensagem que o Pydantic gera
+    para um padrão que não bate é a expressão regular em inglês, e ela apareceria
+    crua na tela. A conferência fica na rota, com uma frase que dá para ler.
     """
 
-    arquivo: str = Field(min_length=1, pattern=r".+\.md$")
+    arquivo: str = Field(min_length=1)
     conteudo: str = Field(min_length=1)
 
 
@@ -235,6 +251,12 @@ def enviar_documento(documento: DocumentoNovo):
     curta que a anterior deixaria para trás os chunks das posições que já não
     existem, e a busca continuaria encontrando texto que foi apagado.
     """
+    if not documento.arquivo.lower().endswith(".md"):
+        raise HTTPException(
+            status_code=400,
+            detail="A base aceita apenas arquivos .md (Markdown).",
+        )
+
     arquivo, titulo = documentos.gravar(documento.arquivo, documento.conteudo)
     retrieval.remover(arquivo)
     chunks = retrieval.indexar([(arquivo, titulo, documento.conteudo)])
@@ -253,11 +275,16 @@ def enviar_documento(documento: DocumentoNovo):
 
 @app.delete("/api/base/documentos/{arquivo}")
 def remover_documento(arquivo: str):
-    """Apaga o `.md` e os chunks dele. As duas coisas, ou a base fica incoerente."""
-    if not documentos.remover(arquivo):
+    """Apaga o `.md` e os chunks dele. As duas coisas, ou a base fica incoerente.
+
+    Os vetores são apagados pelo nome que `documentos.remover` devolveu, e não
+    pelo que veio na URL: é o mesmo nome que a indexação gravou no metadata.
+    """
+    nome = documentos.remover(arquivo)
+    if nome is None:
         raise HTTPException(status_code=404, detail="Documento não encontrado.")
 
-    return {"arquivo": arquivo, "chunks_removidos": retrieval.remover(arquivo)}
+    return {"arquivo": nome, "chunks_removidos": retrieval.remover(nome)}
 
 
 @app.get("/api/metricas")

@@ -57,8 +57,9 @@ prompt = ChatPromptTemplate.from_messages(
 
 # Abre a mensagem que carrega os documentos. Fica separada de MENSAGEM_SISTEMA
 # porque ela só existe quando há contexto: sem documento nenhum, não há o que
-# instruir — e é por isso que o modo sem conhecimento inventa. A regra de não
-# inventar chega junto com a base, não antes dela.
+# instruir. A regra de não inventar chega junto com a base, não antes dela — e é
+# por isso que o modo sem conhecimento continua respondendo de cabeça, com o que
+# o modelo aprendeu sobre lojas em geral em vez do que esta loja escreveu.
 #
 # A recusa vem daqui, e não de um limiar de score na busca, porque o score não
 # separa pergunta coberta de pergunta não coberta: medido nesta base, as duas
@@ -121,9 +122,9 @@ def _mensagem_de_contexto(trechos: list[tuple[str, str]]) -> SystemMessage:
     de template e a chamada quebraria com KeyError. Documento é dado de entrada,
     e dado de entrada não passa por formatação de template.
 
-    O nome do arquivo acompanha cada trecho porque é ele que vira a fonte citada
-    na resposta: sem essa marca, o modelo não tem como dizer de onde tirou o que
-    disse.
+    O nome do arquivo acompanha cada trecho para o modelo poder dizer, no texto,
+    de onde tirou o que disse. O campo `fontes` da resposta é outra coisa: quem o
+    preenche é o nosso código, a partir do que a busca recuperou.
     """
     corpo = "\n\n".join(f"[{arquivo}]\n{conteudo}" for arquivo, conteudo in trechos)
     return SystemMessage(content=CABECALHO_DO_CONTEXTO + corpo)
@@ -141,12 +142,35 @@ def _fontes(modo: str, trechos: list[tuple[str, str]]) -> list[str]:
     return list(dict.fromkeys(arquivo for arquivo, _ in trechos))
 
 
+def _falha_da_base() -> RespostaAtendimento:
+    """A resposta quando a base de conhecimento não pôde ser consultada.
+
+    Sai no mesmo formato de sempre, e não como erro HTTP: quem consome a API trata
+    uma forma só. Vai para a fila humana porque o cliente continua sem resposta —
+    a pergunta dele não foi respondida, ela foi engolida por uma falha de infra.
+    """
+    return RespostaAtendimento(
+        resposta=(
+            "Não consegui consultar a base de conhecimento agora, então prefiro "
+            "não responder de memória. Já encaminhei o caso para um atendente."
+        ),
+        tipo=TipoDeAtendimento.OUTRO,
+        precisa_de_humano=True,
+        motivo="A base de conhecimento não respondeu à consulta.",
+    )
+
+
 def _tokens_de_entrada(resposta_do_modelo) -> int:
     """Quantos tokens o Bedrock contou na entrada desta chamada.
 
-    É a medida do que o contexto custa. Interessa a primeira ida ao modelo, que
-    é a que carrega os documentos; as seguintes só acrescentam o resultado das
-    ferramentas.
+    Medimos a **primeira** ida ao modelo, porque é a que carrega os documentos, e
+    é o número que dá para comparar entre os modos: mesma pergunta, mesmas
+    ferramentas, só o contexto muda.
+
+    Não é o custo total da pergunta. Uma pergunta faz mais de uma chamada — cada
+    volta do ciclo de ferramenta e a chamada final que exige o formato reenviam a
+    conversa inteira, contexto incluído. O total é maior; o que está aqui é o
+    tamanho do prompt, e é sobre ele que o modo de conhecimento manda.
     """
     return (resposta_do_modelo.usage_metadata or {}).get("input_tokens", 0)
 
@@ -198,10 +222,21 @@ def responder(
         pergunta=pergunta,
     )
 
-    # A mensagem de contexto entra depois do format_messages, e é aí que ela
-    # escapa da formatação de template. Vai antes da mensagem do cliente para o
-    # modelo ler a base antes de ler a pergunta.
-    trechos = _trechos_do_modo(modo, pergunta)
+    # Montar o contexto sai da máquina: no modo de busca são uma consulta ao
+    # Postgres e uma chamada de embedding ao Bedrock. Tem o seu próprio try porque
+    # falha aqui tem causa e conserto diferentes de falha do modelo — e porque o
+    # langchain-postgres embrulha erro de conexão numa Exception genérica, que o
+    # except ClientError de baixo não pegaria. Sem isto, banco fora do ar vira 500
+    # com traceback na tela.
+    try:
+        trechos = _trechos_do_modo(modo, pergunta)
+    except Exception:
+        logger.exception("falha ao montar o contexto no modo %s", modo)
+        return Atendimento(resposta=_falha_da_base())
+
+    # A mensagem de contexto entra depois do format_messages, e é aí que ela escapa
+    # da formatação de template. Vai antes da mensagem do cliente para o modelo ler
+    # a base antes de ler a pergunta.
     if trechos:
         mensagens.insert(-1, _mensagem_de_contexto(trechos))
 
@@ -247,7 +282,12 @@ def responder(
             resposta=RespostaAtendimento(
                 resposta=traduzir_erro_do_bedrock(erro, MODELOS[modelo]["model_id"]),
                 tipo=TipoDeAtendimento.OUTRO,
-            )
+            ),
+            # O que já foi medido antes da falha continua valendo: se a busca
+            # chegou a rodar, ela já custou, e esconder isso mentiria sobre o
+            # gasto da pergunta.
+            tokens_de_entrada=tokens_de_entrada,
+            fontes=fontes,
         )
 
 

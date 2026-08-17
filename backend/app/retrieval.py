@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """Indexação e busca: transformar documento em vetor, e pergunta em trechos.
 
-Três decisões estão neste arquivo, e cada uma tem um número que dá para mexer:
-qual modelo transforma texto em vetor, de que tamanho são os pedaços, e quantos
-pedaços a busca devolve.
+Três decisões estão neste arquivo, e todas são ajustáveis por variável de
+ambiente: qual modelo transforma texto em vetor, de que tamanho são os pedaços
+(com quanta sobreposição entre eles), e quantos pedaços a busca devolve.
 
 O caminho da indexação acontece uma vez por documento: parte o texto em chunks,
 manda cada chunk para o modelo de embedding e grava o vetor no Postgres. O
@@ -14,13 +14,13 @@ não mede semelhança nenhuma.
 """
 import logging
 import os
+from functools import lru_cache
 
+import psycopg
 from langchain_aws import BedrockEmbeddings
 from langchain_core.documents import Document
 from langchain_postgres import PGVector
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-
-import psycopg
 
 from app import db
 from app.config import REGIAO_AWS
@@ -54,14 +54,23 @@ TOP_K = int(os.getenv("TOP_K", "4"))
 # os isola de outras coleções que dividam o mesmo banco.
 COLLECTION = "base_de_conhecimento"
 
-_partidor = RecursiveCharacterTextSplitter(
+_divisor = RecursiveCharacterTextSplitter(
     chunk_size=CHUNK_SIZE,
     chunk_overlap=CHUNK_OVERLAP,
 )
 
 
+@lru_cache(maxsize=1)
 def base_vetorial() -> PGVector:
-    """A collection de vetores, pronta para gravar ou buscar."""
+    """A collection de vetores, pronta para gravar ou buscar.
+
+    Construir um PGVector abre um engine do SQLAlchemy, com pool de conexões
+    próprio. Fazer isso a cada pergunta deixaria um pool novo para trás em cada
+    uma — daí o cache: o objeto é montado na primeira chamada e reaproveitado.
+
+    `esvaziar()` limpa o cache, porque depois de apagar a collection o objeto
+    guardado aponta para algo que não existe mais.
+    """
     return PGVector(
         embeddings=BedrockEmbeddings(
             model_id=EMBEDDING_MODEL, region_name=REGIAO_AWS
@@ -72,12 +81,16 @@ def base_vetorial() -> PGVector:
     )
 
 
-def indexar(documentos: list[tuple[str, str, str]]) -> int:
+def indexar(documentos_para_indexar: list[tuple[str, str, str]]) -> int:
     """Indexa [(arquivo, titulo, conteudo)] e devolve o total de chunks gravados.
 
     O id de cada chunk é `arquivo::posição`, e é isso que torna a operação
     idempotente: reindexar o mesmo documento sobrescreve os mesmos ids em vez de
     duplicar o conteúdo na base.
+
+    Cada chunk leva `arquivo`, `titulo` e a própria posição no metadata. O
+    `arquivo` é o que a busca e a remoção usam; os outros dois existem para quem
+    for olhar as linhas da tabela no psql e precisar saber de onde cada vetor veio.
 
     O log de cada etapa é o que permite acompanhar a indexação acontecendo. Sem
     ele, indexar é uma pausa silenciosa e depois uma busca que funciona.
@@ -85,8 +98,8 @@ def indexar(documentos: list[tuple[str, str, str]]) -> int:
     chunks: list[Document] = []
     ids: list[str] = []
 
-    for arquivo, titulo, conteudo in documentos:
-        pedacos = _partidor.split_text(conteudo)
+    for arquivo, titulo, conteudo in documentos_para_indexar:
+        pedacos = _divisor.split_text(conteudo)
         logger.info(
             "indexando %s: %d caracteres -> %d chunk(s)",
             arquivo, len(conteudo), len(pedacos),
@@ -114,18 +127,21 @@ def indexar(documentos: list[tuple[str, str, str]]) -> int:
 def buscar(pergunta: str, k: int = TOP_K) -> list[Document]:
     """Os k trechos mais próximos da pergunta, do mais próximo para o mais longe.
 
-    O score vem anexado em `metadata['score']` — é a distância no espaço
-    vetorial, então menor é mais perto. Ele serve para inspecionar o ranking, e
-    **não** para decidir se a pergunta tem resposta na base: medido nesta base, as
-    faixas de score de pergunta coberta e não coberta se sobrepõem. Uma pergunta
-    sem resposta na base pontua melhor que várias que têm. Quem recusa é a
-    instrução no prompt, não um limiar aqui.
+    Usa `similarity_search_with_score` para o score entrar no log: é a distância
+    no espaço vetorial, então menor é mais perto, e ver o ranking com os números
+    ao lado é o que torna o efeito do top-k observável.
+
+    O score fica **só** no log, e de propósito. Ele não serve para decidir se a
+    pergunta tem resposta na base: medido nesta base, as faixas de score de
+    pergunta coberta e não coberta se sobrepõem, e uma pergunta que a base não
+    cobre pontua melhor que várias que ela cobre. Quem recusa é a instrução no
+    prompt, não um limiar aqui — devolver o score para o resto da aplicação seria
+    convidar exatamente esse erro.
     """
     encontrados = base_vetorial().similarity_search_with_score(pergunta, k=k)
 
     trechos = []
     for posicao, (trecho, score) in enumerate(encontrados, start=1):
-        trecho.metadata["score"] = score
         trechos.append(trecho)
         logger.info(
             "busca %dº %s score=%.4f", posicao, trecho.metadata.get("arquivo"), score
@@ -140,7 +156,9 @@ def contar_por_arquivo() -> dict[str, int]:
     os dois podem divergir, e a divergência é a informação útil.
 
     Lê a tabela interna do langchain-postgres porque o PGVector não expõe
-    contagem. Base que nunca foi criada devolve vazio em vez de estourar.
+    contagem. Base que nunca foi criada devolve vazio em vez de estourar — mas com
+    aviso no log, porque "vazio" e "banco fora do ar" dão o mesmo resultado na
+    tela e só o log distingue os dois.
     """
     sql = (
         "SELECT e.cmetadata->>'arquivo' AS arquivo, count(*) "
@@ -151,7 +169,8 @@ def contar_por_arquivo() -> dict[str, int]:
     try:
         with psycopg.connect(db.dsn(), connect_timeout=5) as conexao:
             return dict(conexao.execute(sql, (COLLECTION,)).fetchall())
-    except Exception:
+    except Exception as erro:
+        logger.warning("nao foi possivel contar os chunks indexados: %s", erro)
         return {}
 
 
@@ -165,6 +184,10 @@ def remover(arquivo: str) -> int:
 
     Vai por SQL porque a exclusão é por metadata, não por id: quantos chunks o
     documento gerou é coisa que só a indexação sabia.
+
+    Falha volta como 0 para a rota responder limpo em vez de estourar 500, mas
+    **com aviso no log**: um 0 silencioso aqui é o que deixaria chunk órfão para
+    trás, e a busca continuaria encontrando texto de um documento apagado.
     """
     sql = (
         "DELETE FROM langchain_pg_embedding e "
@@ -177,11 +200,14 @@ def remover(arquivo: str) -> int:
             removidos = conexao.execute(sql, (COLLECTION, arquivo)).rowcount
         logger.info("removidos %d chunk(s) de %s", removidos, arquivo)
         return removidos
-    except Exception:
+    except Exception as erro:
+        logger.warning("nao foi possivel remover os chunks de %s: %s", arquivo, erro)
         return 0
 
 
 def esvaziar() -> None:
     """Apaga a collection inteira. Ela é recriada na próxima indexação."""
     base_vetorial().delete_collection()
+    # O objeto guardado no cache aponta para uma collection que já não existe.
+    base_vetorial.cache_clear()
     logger.info("collection '%s' esvaziada", COLLECTION)

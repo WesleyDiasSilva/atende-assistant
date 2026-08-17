@@ -49,7 +49,18 @@ export default function BaseDeConhecimento() {
   }
 
   async function removerDocumento(nomeDoArquivo) {
-    await fetch(`/api/base/documentos/${nomeDoArquivo}`, { method: 'DELETE' })
+    setErro(null)
+    try {
+      // O nome vai codificado: um arquivo enviado como "Politica de Frete.md" tem
+      // espaço no nome, e espaço cru na URL não chega inteiro ao servidor.
+      const resposta = await fetch(
+        `/api/base/documentos/${encodeURIComponent(nomeDoArquivo)}`,
+        { method: 'DELETE' },
+      )
+      if (!resposta.ok) throw new Error((await resposta.json()).detail)
+    } catch (falha) {
+      setErro(falha.message || 'Não foi possível remover o documento.')
+    }
     carregar()
   }
 

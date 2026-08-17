@@ -5,8 +5,8 @@ O projeto ganha um banco por um motivo só: guardar vetores. Os `.jsonl` do
 `dados.py` continuam onde estão — o formato de uma linha por registro se lê a
 olho nu, e trocá-lo por tabela não resolveria nenhum problema que exista hoje.
 
-O que um arquivo não sabe fazer é responder "quais destes 39 trechos estão mais
-perto desta pergunta". Isso exige comparar vetores, e é o que a extensão pgvector
+O que um arquivo não sabe fazer é responder "quais destes trechos estão mais perto
+desta pergunta". Isso exige comparar vetores, e é o que a extensão pgvector
 acrescenta ao Postgres.
 """
 import logging
@@ -43,10 +43,10 @@ def url_sqlalchemy() -> str:
     O `+psycopg` no esquema não é decoração: sem ele o SQLAlchemy tenta o driver
     psycopg2, que não está instalado.
     """
-    v = _variaveis()
+    valores = _variaveis()
     return (
-        f"postgresql+psycopg://{v['user']}:{v['password']}"
-        f"@{v['host']}:{v['port']}/{v['dbname']}"
+        f"postgresql+psycopg://{valores['user']}:{valores['password']}"
+        f"@{valores['host']}:{valores['port']}/{valores['dbname']}"
     )
 
 

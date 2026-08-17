@@ -23,8 +23,8 @@ const formatarHorario = (iso) =>
   new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
 
 export default function App() {
-  // O catálogo de modelos, perfis e faixa de temperatura vem da API — a
-  // interface não conhece nenhum desses valores de antemão.
+  // O catálogo de modelos, perfis, modos de conhecimento e faixa de temperatura
+  // vem da API — a interface não conhece nenhum desses valores de antemão.
   const [configuracao, setConfiguracao] = useState(null)
   const [estadoDaApi, setEstadoDaApi] = useState('verificando')
 
@@ -321,8 +321,9 @@ export default function App() {
               <div className="inicio">
                 <h1>Como posso ajudar o cliente?</h1>
                 <p>
-                  Escreva a mensagem que o cliente enviou. A resposta usa o modelo, o
-                  perfil e a temperatura selecionados ao lado.
+                  Escreva a mensagem que o cliente enviou. A resposta usa os
+                  controles selecionados ao lado — e o de <strong>conhecimento</strong>{' '}
+                  é o único que muda o que o atendente sabe.
                 </p>
                 <div className="chips">
                   {PERGUNTAS_DE_EXEMPLO.map((exemplo) => (
@@ -351,14 +352,25 @@ export default function App() {
                     <div className={`bolha ${mensagem.houveErro ? 'erro' : ''}`}>
                       {mensagem.texto}
                     </div>
-                    {/* As fontes ficam fora da bolha, como campo próprio: quem
-                        lê a resposta consegue ir ao documento e conferir. */}
+                    {/* Fora da bolha, como campo próprio: quem lê a resposta
+                        consegue abrir o documento e conferir.
+
+                        O rótulo diz "recuperados", e não "fontes", porque é o que
+                        a busca trouxe — não necessariamente o que a resposta usou.
+                        Quando o atendente diz que não encontrou na base, estes
+                        trechos apareceram e não serviram; sem o rótulo, a lista
+                        pareceria contradizer a própria resposta. */}
                     {mensagem.fontes?.length > 0 && (
-                      <ul className="fontes">
-                        {mensagem.fontes.map((arquivo) => (
-                          <li key={arquivo}>{arquivo}</li>
-                        ))}
-                      </ul>
+                      <div className="recuperados">
+                        <span className="rotulo-recuperados">
+                          Trechos recuperados
+                        </span>
+                        <ul className="fontes">
+                          {mensagem.fontes.map((arquivo) => (
+                            <li key={arquivo}>{arquivo}</li>
+                          ))}
+                        </ul>
+                      </div>
                     )}
                     {/* Registra a configuração de cada turno: ao trocar um controle
                         e repetir a pergunta, a diferença fica documentada na tela. */}
@@ -440,8 +452,9 @@ export default function App() {
             </div>
           </div>
 
-          {/* Fica acima do perfil de propósito: é o controle de maior efeito.
-              Perfil e temperatura mexem na redação; este mexe no conteúdo. */}
+          {/* Entra logo depois do modelo, e antes de perfil e temperatura, porque
+              é o único destes controles que mexe no conteúdo da resposta — os
+              outros dois mexem na redação. */}
           <div className="campo">
             <label>Conhecimento</label>
             <div className="segmentado">
