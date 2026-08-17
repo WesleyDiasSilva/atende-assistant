@@ -22,7 +22,7 @@ atendente sabe — modelo, perfil e temperatura mudam como ele responde.
 """
 import logging
 
-from botocore.exceptions import ClientError
+from botocore.exceptions import ClientError, NoCredentialsError
 from langchain_aws import ChatBedrockConverse
 from langchain_core.messages import SystemMessage, ToolMessage
 from langchain_core.prompts import ChatPromptTemplate
@@ -158,13 +158,29 @@ def _fontes(modo: str, trechos: list[tuple[str, str]]) -> list[str]:
     return list(dict.fromkeys(arquivo for arquivo, _ in trechos))
 
 
-def _falha_da_base() -> RespostaAtendimento:
+def _falha_da_base(erro: Exception) -> RespostaAtendimento:
     """A resposta quando a base de conhecimento não pôde ser consultada.
 
     Sai no mesmo formato de sempre, e não como erro HTTP: quem consome a API trata
     uma forma só. Vai para a fila humana porque o cliente continua sem resposta —
     a pergunta dele não foi respondida, ela foi engolida por uma falha de infra.
+
+    O texto ao cliente não menciona infraestrutura; o diagnóstico vai no `motivo`,
+    que é o campo que a fila mostra a quem vai resolver. São públicos diferentes,
+    e a mesma falha precisa dizer coisas diferentes para cada um.
     """
+    if isinstance(erro, NoCredentialsError):
+        # Vale distinguir esta das outras: a chave de API do Bedrock cobre o
+        # modelo, mas não a consulta ao Knowledge Base, que exige credencial IAM.
+        # É a confusão mais provável de quem só configurou o bearer token.
+        detalhe = (
+            "Sem credencial IAM para consultar o Knowledge Base. A chave de API "
+            "do Bedrock (AWS_BEARER_TOKEN_BEDROCK) autentica o modelo, mas não "
+            "esta consulta."
+        )
+    else:
+        detalhe = f"A base de conhecimento não respondeu à consulta: {erro}"
+
     return RespostaAtendimento(
         resposta=(
             "Não consegui consultar a base de conhecimento agora, então prefiro "
@@ -172,7 +188,7 @@ def _falha_da_base() -> RespostaAtendimento:
         ),
         tipo=TipoDeAtendimento.OUTRO,
         precisa_de_humano=True,
-        motivo="A base de conhecimento não respondeu à consulta.",
+        motivo=detalhe,
     )
 
 
@@ -246,9 +262,9 @@ def responder(
     # com traceback na tela.
     try:
         trechos = _trechos_do_modo(modo, pergunta)
-    except Exception:
+    except Exception as erro:
         logger.exception("falha ao montar o contexto no modo %s", modo)
-        return Atendimento(resposta=_falha_da_base())
+        return Atendimento(resposta=_falha_da_base(erro))
 
     # A mensagem de contexto entra depois do format_messages, e é aí que ela escapa
     # da formatação de template. Vai antes da mensagem do cliente para o modelo ler

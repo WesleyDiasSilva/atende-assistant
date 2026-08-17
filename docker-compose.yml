@@ -37,6 +37,13 @@ services:
     # sem precisar reconstruir a imagem.
     volumes:
       - ./backend:/app
+      # Credenciais AWS do host, somente leitura. O modo de busca gerenciada
+      # consulta o Knowledge Base pela API bedrock-agent-runtime, que exige
+      # assinatura IAM: a chave de API do Bedrock (AWS_BEARER_TOKEN_BEDROCK)
+      # autentica o modelo, mas nao essa consulta. Sem esta linha, os tres
+      # primeiros modos funcionam no conteiner e o quarto falha com
+      # NoCredentialsError. Quem nao tem ~/.aws so ganha uma pasta vazia.
+      - ${HOME}/.aws:/root/.aws:ro
     depends_on:
       db:
         condition: service_healthy
