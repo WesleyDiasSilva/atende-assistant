@@ -75,6 +75,16 @@ MODOS_DE_CONHECIMENTO = {
 
 MODO_PADRAO = "sem_conhecimento"
 
+# O `TOP_K` da segunda tentativa, quando a auto-correção decide ampliar a busca.
+# O `TOP_K` normal mora em `retrieval.py`, junto do resto da configuração da
+# busca; este fica aqui porque não é um parâmetro do retriever: é uma decisão de
+# fluxo — quanto a mais vale a pena olhar quando a primeira passada não achou.
+#
+# Ampliar não é grátis: mais trechos é mais token de entrada, e ruído a mais no
+# contexto pode piorar a resposta em vez de melhorá-la. Dez contra quatro é a
+# folga que ainda cabe no prompt desta base sem afogar o trecho certo.
+TOP_K_AMPLIADO = int(os.getenv("TOP_K_AMPLIADO", "10"))
+
 # Cada perfil injeta uma instrução de tom diferente na mensagem de sistema.
 # Muda como o atendente escreve, não o que ele sabe.
 PERFIS_DE_ATENDIMENTO = {

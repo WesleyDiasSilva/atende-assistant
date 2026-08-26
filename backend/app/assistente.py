@@ -118,7 +118,9 @@ def montar_modelo(modelo: str, temperatura: float) -> ChatBedrockConverse:
     )
 
 
-def _trechos_do_modo(modo: str, pergunta: str) -> list[tuple[str, str]]:
+def _trechos_do_modo(
+    modo: str, pergunta: str, k: int | None = None
+) -> list[tuple[str, str]]:
     """O que vai no contexto, conforme o modo escolhido: [(arquivo, conteudo)].
 
     No modo sem conhecimento a lista é vazia e nada muda em relação ao
@@ -133,10 +135,15 @@ def _trechos_do_modo(modo: str, pergunta: str) -> list[tuple[str, str]]:
     """
     if modo == "stuffing":
         return [(arquivo, conteudo) for arquivo, _, conteudo in documentos.carregar()]
+    # `k` chega preenchido quando a auto-correção pediu uma busca mais larga. O
+    # padrão continua sendo o `TOP_K` da configuração, e o stuffing ignora o
+    # parâmetro: lá não há ranking a ampliar, a base entra inteira de qualquer
+    # jeito.
+    k = k or retrieval.TOP_K
     if modo == "rag":
-        return _do_retriever(retrieval.buscar(pergunta))
+        return _do_retriever(retrieval.buscar(pergunta, k=k))
     if modo == "rag_gerenciado":
-        return _do_retriever(retrieval_gerenciado.buscar(pergunta))
+        return _do_retriever(retrieval_gerenciado.buscar(pergunta, k=k))
     return []
 
 
@@ -252,6 +259,7 @@ def responder(
     modelo: str,
     temperatura: float = TEMPERATURA_PADRAO,
     modo: str = MODO_PADRAO,
+    auto_corrigir: bool = False,
 ) -> Atendimento:
     """Responde ao cliente executando o grafo do atendimento.
 
@@ -273,6 +281,7 @@ def responder(
             "modelo": modelo,
             "temperatura": temperatura,
             "modo": modo,
+            "auto_corrigir": auto_corrigir,
         }
     )
     return estado_final["atendimento"]

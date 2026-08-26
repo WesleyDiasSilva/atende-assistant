@@ -41,6 +41,9 @@ export default function App() {
   // muda o que ele sabe, e por isso o único que pode mudar o conteúdo da resposta.
   const [modoEscolhido, setModoEscolhido] = useState('sem_conhecimento')
   const [temperatura, setTemperatura] = useState(0)
+  // Liga o ciclo de auto-correção: quando a resposta admite não ter achado na
+  // base, o fluxo amplia a busca e tenta uma segunda vez, com a mesma pergunta.
+  const [autoCorrigir, setAutoCorrigir] = useState(false)
 
   const [textoDigitado, setTextoDigitado] = useState('')
   const [conversa, setConversa] = useState([])
@@ -126,6 +129,7 @@ export default function App() {
           modelo: modeloEscolhido,
           modo: modoEscolhido,
           temperatura,
+          auto_corrigir: autoCorrigir,
         }),
       })
       const dados = await resposta.json()
@@ -150,6 +154,9 @@ export default function App() {
           // Os documentos que a busca trouxe. Vêm do nosso código, não do texto
           // do modelo — é isso que permite conferir a resposta contra a base.
           fontes: resposta.ok ? dados.fontes : null,
+          // Quantas vezes o fluxo ampliou a busca antes de responder. Vem do
+          // nosso código: quem contou as voltas foi o grafo, não o modelo.
+          tentativas: resposta.ok ? dados.tentativas : null,
           temperaturaUsada: temperatura,
         },
       ])
@@ -401,6 +408,17 @@ export default function App() {
                             tokens de entrada
                           </>
                         )}
+                        {/* Só aparece quando houve volta: no caminho normal a
+                            contagem é zero e a menção seria ruído. */}
+                        {mensagem.tentativas > 0 && (
+                          <>
+                            {' · '}
+                            <span className="num">{mensagem.tentativas}</span>{' '}
+                            {mensagem.tentativas === 1
+                              ? 'busca ampliada'
+                              : 'buscas ampliadas'}
+                          </>
+                        )}
                       </span>
                     )}
                   </li>
@@ -533,6 +551,37 @@ export default function App() {
               {temperatura === 0
                 ? 'Em 0 o modelo escolhe sempre o token mais provável, então a resposta tende a se repetir.'
                 : 'Acima de 0 a mesma pergunta pode devolver respostas diferentes.'}
+            </p>
+          </div>
+
+          {/* Entra por último porque não muda o que o atendente sabe nem como
+              ele escreve: muda o que o fluxo faz quando a primeira resposta não
+              se sustentou na base. Só tem efeito nos modos de busca — é lá que
+              existe um alcance para ampliar. */}
+          <div className="campo">
+            <label>Auto-correção</label>
+            <div className="segmentado">
+              <button
+                type="button"
+                className={autoCorrigir ? '' : 'ativo'}
+                onClick={() => setAutoCorrigir(false)}
+              >
+                <strong>Desligada</strong>
+                <span>Uma passada só. Não achou, não achou.</span>
+              </button>
+              <button
+                type="button"
+                className={autoCorrigir ? 'ativo' : ''}
+                onClick={() => setAutoCorrigir(true)}
+              >
+                <strong>Ligada</strong>
+                <span>Não achou na base? Amplia a busca e tenta de novo.</span>
+              </button>
+            </div>
+            <p className="dica">
+              A pergunta do cliente não é reescrita — o que muda é quantos trechos
+              a busca devolve na segunda tentativa. Se ainda assim não achar, o
+              caso vai para a fila humana.
             </p>
           </div>
 

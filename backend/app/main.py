@@ -94,6 +94,11 @@ class PerguntaDoCliente(BaseModel):
     temperatura: float = Field(
         default=TEMPERATURA_PADRAO, ge=TEMPERATURA_MINIMA, le=TEMPERATURA_MAXIMA
     )
+    # Liga o ciclo de auto-correção: quando a resposta admite não ter achado na
+    # base, o fluxo amplia a busca e tenta uma segunda vez. Desligado por
+    # padrão — o ciclo custa uma busca e duas idas ao modelo a mais, e quem
+    # consome a API decide se vale.
+    auto_corrigir: bool = False
 
 
 class DocumentoNovo(BaseModel):
@@ -195,6 +200,7 @@ def responder(pergunta_do_cliente: PerguntaDoCliente):
         pergunta_do_cliente.modelo,
         pergunta_do_cliente.temperatura,
         pergunta_do_cliente.modo,
+        pergunta_do_cliente.auto_corrigir,
     )
     resposta = atendimento.resposta
     # O campo `tipo` da resposta é o que torna a contagem por assunto possível:
@@ -225,6 +231,9 @@ def responder(pergunta_do_cliente: PerguntaDoCliente):
         **resposta.model_dump(),
         "tokens_de_entrada": atendimento.tokens_de_entrada,
         "fontes": atendimento.fontes,
+        # Quantas vezes o fluxo ampliou a busca para chegar nesta resposta. Zero
+        # no caminho normal; a interface só o mostra quando houve volta.
+        "tentativas": atendimento.tentativas,
     }
 
 

@@ -84,3 +84,7 @@ class Atendimento(BaseModel):
     # vazio nos outros dois modos: sem busca não houve seleção, e citar a base
     # inteira como "fonte" não informaria nada.
     fontes: list[str] = []
+    # Quantas vezes o fluxo ampliou a busca antes de chegar nesta resposta. Zero
+    # é o caminho normal — a primeira passada bastou. Também é observação do
+    # código, e não do modelo: quem contou as voltas foi o grafo.
+    tentativas: int = 0
