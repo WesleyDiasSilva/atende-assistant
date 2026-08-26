@@ -19,12 +19,19 @@ frágil.
 Antes das duas, uma decisão: o **modo de conhecimento** define quanto da base de
 documentos entra na conversa. É a única coisa na interface que muda o que o
 atendente sabe — modelo, perfil e temperatura mudam como ele responde.
+
+A **ordem** dessas etapas saiu deste arquivo: ela agora é declarada em
+`grafo.py`, como nodes e edges. O que ficou aqui é o trabalho — montar o
+contexto, empacotar o contexto numa mensagem, executar a ferramenta que o modelo
+pediu, contar token, traduzir erro do Bedrock. Os nodes do grafo chamam estas
+funções; nenhuma delas sabe que existe um grafo.
 """
 import logging
+from functools import lru_cache
 
 from botocore.exceptions import ClientError, NoCredentialsError
 from langchain_aws import ChatBedrockConverse
-from langchain_core.messages import SystemMessage, ToolMessage
+from langchain_core.messages import SystemMessage
 from langchain_core.prompts import ChatPromptTemplate
 
 from app import documentos, retrieval, retrieval_gerenciado
@@ -90,8 +97,19 @@ MODOS_COM_BUSCA = ("rag", "rag_gerenciado")
 logger = logging.getLogger(__name__)
 
 
+@lru_cache(maxsize=16)
 def montar_modelo(modelo: str, temperatura: float) -> ChatBedrockConverse:
-    """Cria o chat model com o que a interface escolheu."""
+    """Cria o chat model com o que a interface escolheu.
+
+    Cacheado por (modelo, temperatura) porque agora ele é pedido mais de uma vez
+    na mesma pergunta: cada node que fala com o Bedrock chama esta função.
+    Construir um `ChatBedrockConverse` abre um cliente boto3 — fazer isso três
+    vezes por pergunta pagaria três vezes a mesma montagem. O objeto não guarda
+    estado de conversa (`bind_tools` e `with_structured_output` devolvem novos
+    objetos), então reaproveitá-lo entre requisições é seguro.
+
+    O mesmo padrão de `retrieval.base_vetorial()`, e pelo mesmo motivo.
+    """
     return ChatBedrockConverse(
         model_id=MODELOS[modelo]["model_id"],
         region_name=REGIAO_AWS,
@@ -235,92 +253,29 @@ def responder(
     temperatura: float = TEMPERATURA_PADRAO,
     modo: str = MODO_PADRAO,
 ) -> Atendimento:
-    """Responde ao cliente, usando ferramentas quando precisa de dado externo.
+    """Responde ao cliente executando o grafo do atendimento.
 
-    São duas etapas, e a separação é proposital: `bind_tools` e
-    `with_structured_output` disputam o mesmo mecanismo por baixo, então
-    primeiro roda o ciclo de ferramentas até o modelo parar de pedir, e só
-    depois se exige o formato final da resposta.
+    O que esta função faz hoje é só a fronteira: monta o estado inicial com o
+    que a interface escolheu, invoca o grafo e devolve o que ele deixou no
+    campo de saída. As decisões e o ciclo que antes moravam aqui estão em
+    `grafo.py`, onde dá para ler a topologia inteira de uma vez.
 
-    O `modo` decide o que o atendente sabe. Ele é ortogonal às ferramentas: o
-    contexto responde sobre política e produto, a ferramenta responde sobre o
-    pedido daquele cliente. As duas fontes convivem na mesma conversa.
+    O import é local para não fechar um ciclo: `grafo` importa as funções de
+    trabalho deste módulo. Na primeira pergunta o módulo é carregado e o grafo
+    compilado uma única vez; nas seguintes vem do cache de módulos do Python.
     """
-    model = montar_modelo(modelo, temperatura)
-    model_com_ferramentas = model.bind_tools(FERRAMENTAS)
+    from app.grafo import GRAFO
 
-    mensagens = prompt.format_messages(
-        instrucao_de_tom=PERFIS_DE_ATENDIMENTO[perfil]["instrucao_de_tom"],
-        pergunta=pergunta,
+    estado_final = GRAFO.invoke(
+        {
+            "pergunta": pergunta,
+            "perfil": perfil,
+            "modelo": modelo,
+            "temperatura": temperatura,
+            "modo": modo,
+        }
     )
-
-    # Montar o contexto sai da máquina: no modo de busca são uma consulta ao
-    # Postgres e uma chamada de embedding ao Bedrock. Tem o seu próprio try porque
-    # falha aqui tem causa e conserto diferentes de falha do modelo — e porque o
-    # langchain-postgres embrulha erro de conexão numa Exception genérica, que o
-    # except ClientError de baixo não pegaria. Sem isto, banco fora do ar vira 500
-    # com traceback na tela.
-    try:
-        trechos = _trechos_do_modo(modo, pergunta)
-    except Exception as erro:
-        logger.exception("falha ao montar o contexto no modo %s", modo)
-        return Atendimento(resposta=_falha_da_base(erro))
-
-    # A mensagem de contexto entra depois do format_messages, e é aí que ela escapa
-    # da formatação de template. Vai antes da mensagem do cliente para o modelo ler
-    # a base antes de ler a pergunta.
-    if trechos:
-        mensagens.insert(-1, _mensagem_de_contexto(trechos))
-
-    fontes = _fontes(modo, trechos)
-    tokens_de_entrada = 0
-
-    try:
-        for passo in range(MAXIMO_DE_PASSOS):
-            resposta_do_modelo = model_com_ferramentas.invoke(mensagens)
-            mensagens.append(resposta_do_modelo)
-
-            if passo == 0:
-                tokens_de_entrada = _tokens_de_entrada(resposta_do_modelo)
-
-            # Sem pedido de ferramenta, o modelo já tem o que precisa.
-            if not resposta_do_modelo.tool_calls:
-                break
-
-            # A intenção chega em tool_calls, com nome, argumentos e um id. O
-            # resultado volta numa ToolMessage amarrada a esse id, senão o
-            # modelo não sabe a qual pedido a resposta corresponde.
-            for chamada in resposta_do_modelo.tool_calls:
-                mensagens.append(
-                    ToolMessage(
-                        content=_executar_ferramenta(chamada),
-                        tool_call_id=chamada["id"],
-                    )
-                )
-
-        # Etapa final: a mesma conversa, agora exigindo o formato de saída.
-        resposta = model.with_structured_output(RespostaAtendimento).invoke(mensagens)
-        return Atendimento(
-            resposta=resposta, tokens_de_entrada=tokens_de_entrada, fontes=fontes
-        )
-    except ClientError as erro:
-        # O LangChain não embrulha os erros do Bedrock: eles continuam sendo do
-        # botocore, e ClientError é a classe-mãe de todos. Por isso um único
-        # except cobre falha de credencial, modelo inválido e acesso negado.
-        #
-        # A falha também sai no formato do schema: quem consome a API trata uma
-        # forma só, com erro ou sem erro.
-        return Atendimento(
-            resposta=RespostaAtendimento(
-                resposta=traduzir_erro_do_bedrock(erro, MODELOS[modelo]["model_id"]),
-                tipo=TipoDeAtendimento.OUTRO,
-            ),
-            # O que já foi medido antes da falha continua valendo: se a busca
-            # chegou a rodar, ela já custou, e esconder isso mentiria sobre o
-            # gasto da pergunta.
-            tokens_de_entrada=tokens_de_entrada,
-            fontes=fontes,
-        )
+    return estado_final["atendimento"]
 
 
 def traduzir_erro_do_bedrock(erro: ClientError, model_id: str) -> str:

@@ -27,3 +27,13 @@ psycopg[binary]==3.3.4
 # langchain-postgres traz pgvector, sqlalchemy e asyncpg como dependencias.
 langchain-postgres==0.0.17
 langchain-text-splitters==1.1.2
+
+# Grafo do fluxo. langgraph 1.2.11 exige langchain-core>=1.4.7,<2 — o pin de
+# 1.5.3 acima satisfaz a faixa, e a resolucao nao sobe o core (verificado com
+# `pip install --dry-run langgraph==1.2.11` dentro da imagem: instala apenas
+# langgraph, langgraph-checkpoint, langgraph-prebuilt, langgraph-sdk, ormsgpack
+# e websockets, sem tocar em langchain-core).
+#
+# Ele NAO vinha de carona: o requirements pina langchain-core e langchain-aws,
+# nao o metapacote langchain, entao nada trazia langgraph antes desta linha.
+langgraph==1.2.11
