@@ -20,8 +20,9 @@ backend/
   app/
     main.py         API (FastAPI): saude, configuracao, responder,
                     metricas, solicitacoes e base de conhecimento
-    assistente.py   o ciclo de ferramenta, o modo de conhecimento e a saída
-                    estruturada
+    assistente.py   o trabalho: montar o contexto, executar a ferramenta que
+                    o modelo pediu, contar token, traduzir erro do Bedrock
+    grafo.py        a topologia: os nodes, as arestas e as decisões do fluxo
     retrieval.py    embeddings, chunking, indexação e busca (pgvector)
     documentos.py   leitura e escrita dos .md da base
     db.py           conexão com o Postgres
@@ -76,6 +77,7 @@ Variáveis usadas:
 | `DB_USER` / `DB_PASSWORD` / `DB_NAME` | Credenciais e banco |
 | `EMBEDDING_MODEL` | Modelo que transforma texto em vetor |
 | `TOP_K` | Quantos trechos a busca devolve por pergunta |
+| `TOP_K_AMPLIADO` | Quantos trechos a busca devolve quando a auto-correção amplia o alcance |
 | `CHUNK_SIZE` / `CHUNK_OVERLAP` | Tamanho do pedaço e a sobreposição, em caracteres |
 
 `DB_PORT` é a porta publicada **no host**, com 5434 como padrão: 5432 costuma
@@ -174,7 +176,50 @@ conhecimento não há base contra a qual conferir, então o modelo responde com 
 aprendeu sobre lojas em geral — às vezes um número específico e errado, às vezes
 uma resposta vaga, nunca o que esta loja escreveu.
 
-## Os quatro controles da interface
+## O fluxo como grafo
+
+O caminho de uma pergunta é declarado em `backend/app/grafo.py`, como um
+`StateGraph`: cada etapa é um **node** (uma função que recebe o estado e devolve
+o que mudou nele) e cada decisão é uma **aresta condicional** (uma função que só
+escolhe o próximo node). O estado é o único canal entre eles.
+
+Antes isso era o corpo de `responder()` — um `if` de modo, um `for` de ferramenta
+e um `return` no fim. Funcionava; o que não havia era onde *ler* o fluxo. O que
+se ganha declarando não é desempenho, é topologia: o grafo se desenha, e
+capacidade nova entra como node em vez de `if` mais fundo.
+
+```bash
+docker compose exec backend python desenhar_grafo.py
+```
+
+Sai o Mermaid da topologia atual, emitido pelo próprio grafo compilado — é
+documentação que não pode ficar desatualizada, porque ela é o código.
+
+Duas coisas que o grafo trouxe e que não existiam antes:
+
+**Triagem na entrada.** Uma chamada curta classifica a mensagem em "assunto da
+loja" ou "fora do escopo". O que está fora recebe uma recusa educada e termina
+ali, sem busca vetorial, sem ciclo de ferramenta e sem chamada de formato: uma
+ida ao modelo em vez de três. A classificação é *fail-open* — na dúvida, segue
+como se estivesse no escopo. Um falso "fora" calaria um cliente legítimo; um
+falso "no escopo" só custa o fluxo normal, que já sabe recusar o que não está na
+base.
+
+**Ciclo de auto-correção.** Quando a resposta admite não ter achado a informação
+na base, o fluxo pode **ampliar a busca** — de `TOP_K` para `TOP_K_AMPLIADO`
+trechos — e tentar uma segunda vez. Se ainda não achar, o caso vai para a fila
+humana com o motivo.
+
+O que o ciclo **não** faz é reescrever a pergunta. A pergunta do cliente é o que
+ela é: trocar as palavras dele por outras muda o que foi perguntado, e uma
+resposta certa para uma pergunta que ninguém fez é pior do que um "não
+encontrei". A hipótese testada na segunda passada é outra — o trecho certo pode
+estar na base, só não entre os primeiros colocados.
+
+O ciclo tem teto (uma ampliação) porque ciclo sem teto num grafo é o mesmo
+problema do laço sem teto numa função: ele não termina.
+
+## Os cinco controles da interface
 
 Na mesma ordem em que aparecem no painel.
 
@@ -199,6 +244,12 @@ escreve, não *o que* ele sabe.
 a resposta tende a se repetir; acima de 0 a mesma pergunta pode voltar diferente.
 O determinismo em 0 é confiável no modelo rápido; nos maiores a substância se
 mantém, mas a redação pode variar.
+
+**Auto-correção** — liga o ciclo que amplia a busca quando a resposta não se
+sustentou na base. Não muda o que o atendente sabe nem como ele escreve: muda o
+que o fluxo *faz* diante de uma resposta que não se sustentou. Só tem efeito nos
+modos de busca — é lá que existe um alcance para ampliar. Desligada por padrão,
+porque o ciclo custa uma busca e duas idas ao modelo a mais.
 
 > **Ao trocar os modelos em `backend/app/config.py`:** nos modelos da família 5
 > (`claude-sonnet-5`, `claude-opus-5`, `claude-fable-5`) e no Opus 4.7/4.8 o
