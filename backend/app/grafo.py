@@ -21,19 +21,21 @@ executam ferramenta, contam token e traduzem erro do Bedrock continuam em
 `assistente.py`, e são chamadas daqui. Este arquivo é a topologia; aquele é o
 trabalho.
 
-    START → rota_por_modo (condicional)
-              com_busca → recuperar → conversar
-              sem_busca →             conversar
+    START → triagem → rota_apos_triagem (condicional)
+              fora_de_escopo → resposta_direta → END
+              com_busca      → recuperar → conversar
+              sem_busca      →             conversar
     conversar → rota_da_ferramenta (condicional)
               ferramenta → executar_ferramentas → conversar   ← ciclo
               formalizar → formalizar → END
 """
 import logging
-from typing import TypedDict
+from typing import Literal, TypedDict
 
 from botocore.exceptions import ClientError
-from langchain_core.messages import ToolMessage
+from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langgraph.graph import END, START, StateGraph
+from pydantic import BaseModel, Field
 
 # As funções de trabalho continuam em `assistente.py`; o que este arquivo faz é
 # ligá-las numa ordem legível. O import é nominal de propósito: a lista abaixo é
@@ -51,7 +53,7 @@ from app.assistente import (
     prompt,
     traduzir_erro_do_bedrock,
 )
-from app.config import MODELOS, PERFIS_DE_ATENDIMENTO
+from app.config import MODELOS, PERFIS_DE_ATENDIMENTO, TEMPERATURA_MINIMA
 from app.schemas import Atendimento, RespostaAtendimento, TipoDeAtendimento
 
 logger = logging.getLogger(__name__)
@@ -82,6 +84,7 @@ class EstadoAtendimento(TypedDict, total=False):
     temperatura: float
     modo: str
     # Intermediários — o que era variável local do fluxo
+    escopo: str
     mensagens: list
     trechos: list[tuple[str, str]]
     fontes: list[str]
@@ -90,6 +93,54 @@ class EstadoAtendimento(TypedDict, total=False):
     top_k: int
     # Saída — o que `responder()` devolve
     atendimento: Atendimento
+
+
+# A triagem é a primeira decisão do grafo, e a mais barata: uma chamada curta que
+# só classifica, sem contexto e sem ferramenta. Ela existe para o que não é
+# assunto da loja não chegar a pagar busca vetorial, ciclo de ferramenta e
+# chamada de formato.
+INSTRUCAO_DA_TRIAGEM = """Você é a triagem do atendimento de uma loja de produtos congelados. Classifique a mensagem do cliente em uma de duas categorias:
+
+- "atendimento": qualquer assunto da loja — pedido, entrega, prazo, rastreamento, troca, devolução, reclamação, pagamento, nota fiscal, cupom, cadastro, assinatura, ou dúvida sobre produto, conservação, validade e preparo.
+- "fora_de_escopo": saudação e conversa fiada, e temas alheios à loja (clima, esportes, notícias, piadas, receitas, conhecimento geral, pedido de ajuda com outro assunto).
+
+Na dúvida entre as duas, classifique como "atendimento": o fluxo normal sabe recusar o que não está na base, e barrar um cliente legítimo é o erro mais caro dos dois.
+
+Exemplos:
+- "onde está o meu pedido 81030?" → atendimento
+- "meu salmão chegou descongelado" → atendimento
+- "vocês entregam em Curitiba?" → atendimento
+- "posso congelar de novo depois de descongelar?" → atendimento
+- "qual a previsão do tempo pra amanhã?" → fora_de_escopo
+- "oi, tudo bem?" → fora_de_escopo
+- "me conta uma piada" → fora_de_escopo"""
+
+# O que o cliente ouve quando a triagem barra a mensagem. É texto fixo, e não
+# uma chamada ao modelo: a recusa é sempre a mesma, então gerá-la seria pagar
+# uma segunda ida ao Bedrock para escrever uma frase que já está escrita. O
+# node novo economiza chamadas — e economizar duas em vez de uma é a diferença
+# entre gastar 1 e gastar 3 nesta pergunta.
+TEXTO_FORA_DE_ESCOPO = (
+    "Aqui eu consigo ajudar só com o que é da loja: pedidos, entregas, trocas e "
+    "dúvidas sobre os produtos. Sobre algum desses, como posso ajudar?"
+)
+
+
+class _Escopo(BaseModel):
+    """A saída da triagem: um campo só, com duas opções fechadas.
+
+    Structured output com `Literal` em vez de texto livre porque o valor vai
+    alimentar uma rota do grafo. Uma classificação que volta como frase teria de
+    ser interpretada por nós, e interpretar texto do modelo para decidir caminho
+    é exatamente o que a saída estruturada existe para evitar.
+    """
+
+    escopo: Literal["atendimento", "fora_de_escopo"] = Field(
+        description=(
+            "'atendimento' se a mensagem é assunto da loja; 'fora_de_escopo' "
+            "para saudação, conversa fiada e temas alheios à loja."
+        )
+    )
 
 
 # --- Auxiliares dos nodes ---------------------------------------------------
@@ -138,6 +189,54 @@ def _falha_do_bedrock(state: EstadoAtendimento, erro: ClientError) -> dict:
 
 
 # --- Nodes ------------------------------------------------------------------
+
+
+def triagem(state: EstadoAtendimento) -> dict:
+    """Classifica a mensagem em "atendimento" ou "fora_de_escopo".
+
+    Roda em temperatura mínima, e não na que a interface escolheu: a temperatura
+    é um controle sobre a *redação* da resposta ao cliente, e classificação não
+    é redação — a mesma mensagem tem de cair sempre no mesmo lado.
+
+    **Fail-open.** Qualquer falha classifica como "atendimento". Um falso "fora"
+    calaria um cliente legítimo; um falso "no escopo" só custa o fluxo normal,
+    que já sabe recusar o que não está na base. Os dois erros não são
+    simétricos, e a escolha do padrão segue o mais barato dos dois.
+    """
+    model = montar_modelo(state["modelo"], TEMPERATURA_MINIMA)
+    try:
+        classificacao = model.with_structured_output(_Escopo).invoke(
+            [
+                SystemMessage(content=INSTRUCAO_DA_TRIAGEM),
+                HumanMessage(content=state["pergunta"]),
+            ]
+        )
+        escopo = classificacao.escopo
+    except Exception as erro:
+        logger.warning("triagem falhou, seguindo como atendimento: %s", erro)
+        escopo = "atendimento"
+
+    logger.info("[triagem] %s pergunta=%r", escopo, state["pergunta"])
+    return {"escopo": escopo}
+
+
+def resposta_direta(state: EstadoAtendimento) -> dict:
+    """A saída curta para o que a triagem barrou: nenhuma busca, nenhum modelo.
+
+    Devolve `Atendimento` no mesmo formato de sempre — quem consome a API trata
+    uma forma só. `precisa_de_humano` fica falso de propósito: mensagem fora do
+    escopo não é trabalho para uma pessoa, e enfileirá-la encheria a fila de
+    ruído.
+    """
+    logger.info("[grafo] resposta_direta (sem busca e sem chamada de geracao)")
+    return {
+        "atendimento": Atendimento(
+            resposta=RespostaAtendimento(
+                resposta=TEXTO_FORA_DE_ESCOPO,
+                tipo=TipoDeAtendimento.OUTRO,
+            )
+        )
+    }
 
 
 def recuperar(state: EstadoAtendimento) -> dict:
@@ -239,8 +338,21 @@ def formalizar(state: EstadoAtendimento) -> dict:
 # permite mudar o caminho sem mexer em quem executa.
 
 
-def rota_por_modo(state: EstadoAtendimento) -> str:
-    """A decisão que era o `if modo` dentro de `_trechos_do_modo`."""
+def rota_apos_triagem(state: EstadoAtendimento) -> str:
+    """Três saídas numa função só: barrar, buscar contexto, ou ir direto.
+
+    É de propósito uma rota, e não duas condicionais em série (uma para o escopo,
+    outra para o modo). O que se decide aqui é uma coisa só — por onde esta
+    pergunta entra no fluxo — e ler as três possibilidades lado a lado é o que
+    torna a topologia legível.
+
+    A segunda metade é a decisão que era o `if modo` dentro de
+    `_trechos_do_modo`. O stuffing entra por "com_busca" junto com os dois modos
+    de RAG: ele não faz busca, mas precisa do mesmo node, porque a pergunta que
+    o node responde é "o que entra no contexto?".
+    """
+    if state["escopo"] == "fora_de_escopo":
+        return "fora_de_escopo"
     return "sem_busca" if state["modo"] == MODO_SEM_CONTEXTO else "com_busca"
 
 
@@ -270,16 +382,24 @@ def _construir_grafo():
     """Declara os nodes, liga as edges e compila. Roda uma vez, no import."""
     grafo = StateGraph(EstadoAtendimento)
 
+    grafo.add_node("triagem", triagem)
+    grafo.add_node("resposta_direta", resposta_direta)
     grafo.add_node("recuperar", recuperar)
     grafo.add_node("conversar", conversar)
     grafo.add_node("executar_ferramentas", executar_ferramentas)
     grafo.add_node("formalizar", formalizar)
 
+    grafo.add_edge(START, "triagem")
     grafo.add_conditional_edges(
-        START,
-        rota_por_modo,
-        {"com_busca": "recuperar", "sem_busca": "conversar"},
+        "triagem",
+        rota_apos_triagem,
+        {
+            "fora_de_escopo": "resposta_direta",
+            "com_busca": "recuperar",
+            "sem_busca": "conversar",
+        },
     )
+    grafo.add_edge("resposta_direta", END)
     grafo.add_conditional_edges(
         "recuperar",
         rota_apos_recuperar,
