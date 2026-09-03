@@ -1,4 +1,6 @@
 .env
+.env.*
+!.env.example
 __pycache__/
 .venv/
 
@@ -12,3 +14,15 @@ dist/
 # Material do instrutor — nao vai para a turma
 .claude/
 CLAUDE.md
+
+# Utilitarios locais de inspecao e de restauracao da base. Ficam de fora
+# porque sao ferramentas de quem opera o projeto, nao parte do que ele faz.
+backend/mostrar_prompt.py
+backend/restaurar_base.py
+
+# Anotacoes locais de quem opera o projeto.
+aula.md
+
+# Copias de seguranca feitas a mao antes de mexer nos dados de execucao.
+*.bak
+*.bak-*
