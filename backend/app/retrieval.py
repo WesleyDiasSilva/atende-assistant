@@ -28,8 +28,6 @@ from app.config import REGIAO_AWS
 logger = logging.getLogger(__name__)
 
 # O Titan v2 devolve vetores de 1024 dimensões. Contra esta base, ele deu o mesmo
-# primeiro colocado que o Cohere multilingual em 10 de 10 perguntas de teste —
-# não houve ganho de qualidade que justificasse um modelo cinco vezes mais caro.
 # Trocar o modelo aqui invalida os vetores já gravados: reindexe a base.
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "amazon.titan-embed-text-v2:0")
 
