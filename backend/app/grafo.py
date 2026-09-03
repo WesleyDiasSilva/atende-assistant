@@ -119,6 +119,11 @@ class EstadoAtendimento(TypedDict, total=False):
     temperatura: float
     modo: str
     auto_corrigir: bool
+    # Se este turno usa a conversa anterior. Vive no estado, junto de
+    # `auto_corrigir`, e pelo mesmo motivo: é um controle do fluxo, e o fluxo lê
+    # os seus controles no estado. Ler a memória e gravar nela são dois pontos
+    # diferentes do grafo, e os dois olham para esta chave.
+    memoria_ativa: bool
     # A conversa até aqui, e o **único** campo que acumula.
     #
     # `add_messages` é um reducer: quando um node devolve algo nesta chave, o
@@ -241,12 +246,15 @@ def _abrir_conversa(state: EstadoAtendimento) -> list:
     agora. O histórico vai logo depois da instrução porque é conversa, não é
     instrução nem documento — colocá-lo depois do contexto faria o modelo ler
     turnos antigos como se fossem base de conhecimento.
+
+    Com a memória desligada, o histórico simplesmente não entra. Ele continua
+    gravado no banco — quem não lê é este turno. Desligar não apaga.
     """
     mensagens = prompt.format_messages(
         instrucao_de_tom=PERFIS_DE_ATENDIMENTO[state["perfil"]]["instrucao_de_tom"],
         pergunta=state["pergunta"],
     )
-    historico = state.get("historico") or []
+    historico = state.get("historico") if state.get("memoria_ativa") else None
     if historico:
         mensagens[1:1] = historico
     trechos = state.get("trechos")
@@ -506,7 +514,14 @@ def finalizar(state: EstadoAtendimento) -> dict:
     correspondente é conversa pela metade, e no turno seguinte o `bind_tools`
     recebe um pedido de ferramenta sem resultado e a chamada é recusada. O
     histórico guarda o que foi dito, não como foi produzido.
+
+    Com a memória desligada este node não grava nada, e isso é o que torna o
+    controle honesto: um turno sem memória não lê a conversa **nem entra nela**.
+    Se ele gravasse, desligar seria só esconder — e ao religar apareceria um
+    trecho de conversa que o atendente nunca viu.
     """
+    if not state.get("memoria_ativa"):
+        return {}
     atendimento = state.get("atendimento")
     if atendimento is None:
         return {}

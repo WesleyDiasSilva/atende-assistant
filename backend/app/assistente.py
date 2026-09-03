@@ -278,6 +278,7 @@ def responder(
     modo: str = MODO_PADRAO,
     auto_corrigir: bool = False,
     conversa_id: str = "",
+    memoria_ativa: bool = True,
 ) -> Atendimento:
     """Responde ao cliente executando o grafo do atendimento.
 
@@ -306,6 +307,7 @@ def responder(
             "temperatura": temperatura,
             "modo": modo,
             "auto_corrigir": auto_corrigir,
+            "memoria_ativa": memoria_ativa,
         },
         config=config_da_conversa(conversa_id),
     )

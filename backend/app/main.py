@@ -128,6 +128,10 @@ class PerguntaDoCliente(BaseModel):
     # Vazio é aceito de propósito — chamada solta à API não é conversa, e recebe
     # uma chave descartável.
     conversa_id: str = ""
+    # Se este turno usa a conversa anterior. Ligado por padrão: lembrar do que
+    # acabou de ser dito é o comportamento esperado de um atendimento, e é
+    # desligar que precisa ser um pedido explícito.
+    memoria_ativa: bool = True
 
 
 class DocumentoNovo(BaseModel):
@@ -231,6 +235,7 @@ def responder(pergunta_do_cliente: PerguntaDoCliente):
         pergunta_do_cliente.modo,
         pergunta_do_cliente.auto_corrigir,
         pergunta_do_cliente.conversa_id,
+        pergunta_do_cliente.memoria_ativa,
     )
     resposta = atendimento.resposta
     # O campo `tipo` da resposta é o que torna a contagem por assunto possível:

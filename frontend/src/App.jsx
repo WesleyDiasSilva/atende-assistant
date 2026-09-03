@@ -44,6 +44,31 @@ export default function App() {
   // Liga o ciclo de auto-correção: quando a resposta admite não ter achado na
   // base, o fluxo amplia a busca e tenta uma segunda vez, com a mesma pergunta.
   const [autoCorrigir, setAutoCorrigir] = useState(false)
+  // Se o atendente usa a conversa anterior para responder este turno.
+  const [memoriaAtiva, setMemoriaAtiva] = useState(true)
+
+  // Qual conversa é esta. Vai em cada pergunta e é a chave sob a qual o backend
+  // grava o estado do fluxo — é ela que faz o atendente lembrar do turno
+  // anterior, e é ela que separa esta conversa de qualquer outra.
+  //
+  // Guardada no navegador de propósito: recarregar a página não pode virar
+  // conversa nova. O identificador é de quem conversa, não da aba aberta.
+  const [conversaId, setConversaId] = useState(() => {
+    const gravada = localStorage.getItem('conversa_id')
+    if (gravada) return gravada
+    const nova = crypto.randomUUID()
+    localStorage.setItem('conversa_id', nova)
+    return nova
+  })
+
+  // Começar de novo é trocar a chave, não apagar nada: a conversa anterior
+  // continua gravada no banco, sob a chave antiga.
+  const comecarNovaConversa = () => {
+    const nova = crypto.randomUUID()
+    localStorage.setItem('conversa_id', nova)
+    setConversaId(nova)
+    setConversa([])
+  }
 
   const [textoDigitado, setTextoDigitado] = useState('')
   const [conversa, setConversa] = useState([])
@@ -130,6 +155,8 @@ export default function App() {
           modo: modoEscolhido,
           temperatura,
           auto_corrigir: autoCorrigir,
+          conversa_id: conversaId,
+          memoria_ativa: memoriaAtiva,
         }),
       })
       const dados = await resposta.json()
@@ -552,6 +579,41 @@ export default function App() {
                 ? 'Em 0 o modelo escolhe sempre o token mais provável, então a resposta tende a se repetir.'
                 : 'Acima de 0 a mesma pergunta pode devolver respostas diferentes.'}
             </p>
+          </div>
+
+          {/* Não muda o que o atendente sabe nem como ele escreve: muda o que
+              ele leva do turno anterior para este. Vale em todos os modos,
+              porque o histórico é anterior à decisão de contexto. */}
+          <div className="campo">
+            <label>Memória da conversa</label>
+            <div className="segmentado">
+              <button
+                type="button"
+                className={memoriaAtiva ? '' : 'ativo'}
+                onClick={() => setMemoriaAtiva(false)}
+              >
+                <strong>Desligada</strong>
+                <span>Cada pergunta é a primeira. Nada do turno anterior entra.</span>
+              </button>
+              <button
+                type="button"
+                className={memoriaAtiva ? 'ativo' : ''}
+                onClick={() => setMemoriaAtiva(true)}
+              >
+                <strong>Ligada</strong>
+                <span>A conversa anterior entra junto com a pergunta de agora.</span>
+              </button>
+            </div>
+            <p className="dica">
+              Desligada, o turno não lê o histórico <strong>e não entra nele</strong>
+              . O que já estava gravado continua gravado — desligar não apaga.
+            </p>
+            <div className="conversa-atual">
+              <code>{conversaId.slice(0, 8)}</code>
+              <button type="button" className="nova-conversa" onClick={comecarNovaConversa}>
+                Nova conversa
+              </button>
+            </div>
           </div>
 
           {/* Entra por último porque não muda o que o atendente sabe nem como
