@@ -35,7 +35,9 @@ from app import (  # noqa: E402  (depois do load_dotenv, de propósito)
     dados,
     db,
     documentos,
+    grafo,
     log,
+    memoria,
     retrieval,
     retrieval_gerenciado,
 )
@@ -56,6 +58,11 @@ from app.schemas import TipoDeAtendimento  # noqa: E402
 log.configurar()
 
 
+# A conexão do checkpointer, guardada para ser fechada no encerramento. Fica em
+# módulo porque o ciclo de vida é o único lugar que a abre e o único que a fecha.
+_conexao_da_memoria = None
+
+
 @asynccontextmanager
 async def ciclo_de_vida(_: FastAPI):
     """Roda uma vez, quando a API sobe.
@@ -63,9 +70,23 @@ async def ciclo_de_vida(_: FastAPI):
     Tocar o banco no boot é de propósito: é o último momento em que ainda dá
     para ver no log que a conexão não funciona, antes de a primeira pergunta
     falhar na frente de alguém.
+
+    O grafo passou a ser compilado aqui, e não no import. A compilação precisa da
+    conexão onde o estado será gravado, e essa conexão é aberta neste ponto — uma
+    só, viva enquanto a API viver. Abrir uma por pergunta pagaria o handshake com
+    o Postgres a cada turno, e o checkpointer serializa o acesso por conta
+    própria, então uma basta.
     """
     db.garantir_extensao_vector()
+
+    global _conexao_da_memoria
+    _conexao_da_memoria, checkpointer = memoria.abrir_checkpointer()
+    grafo.definir_grafo(grafo.compilar_grafo(checkpointer))
+
     yield
+
+    if _conexao_da_memoria is not None:
+        _conexao_da_memoria.close()
 
 
 app = FastAPI(title="Atendente de Pedidos", lifespan=ciclo_de_vida)
@@ -99,6 +120,14 @@ class PerguntaDoCliente(BaseModel):
     # padrão — o ciclo custa uma busca e duas idas ao modelo a mais, e quem
     # consome a API decide se vale.
     auto_corrigir: bool = False
+    # Qual conversa é esta. Vira a chave sob a qual o estado do grafo é gravado,
+    # e é o que separa o que uma pessoa disse do que outra disse. Quem gera o
+    # identificador é quem conversa, não a API: o mesmo cliente mantendo a mesma
+    # chave é o que faz o atendimento lembrar do turno anterior.
+    #
+    # Vazio é aceito de propósito — chamada solta à API não é conversa, e recebe
+    # uma chave descartável.
+    conversa_id: str = ""
 
 
 class DocumentoNovo(BaseModel):
@@ -201,6 +230,7 @@ def responder(pergunta_do_cliente: PerguntaDoCliente):
         pergunta_do_cliente.temperatura,
         pergunta_do_cliente.modo,
         pergunta_do_cliente.auto_corrigir,
+        pergunta_do_cliente.conversa_id,
     )
     resposta = atendimento.resposta
     # O campo `tipo` da resposta é o que torna a contagem por assunto possível:

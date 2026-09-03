@@ -13,8 +13,8 @@ nenhum. O que era variável local de `responder()` passa a ser campo do estado,
 e o estado é o único canal entre os nodes.
 
 O que se ganha não é desempenho: é topologia. O grafo se desenha
-(`GRAFO.get_graph().draw_mermaid()`), e capacidade nova entra como node novo em
-vez de `if` mais fundo dentro de uma função que já era grande.
+(`compilar_grafo().get_graph().draw_mermaid()`), e capacidade nova entra como
+node novo em vez de `if` mais fundo dentro de uma função que já era grande.
 
 O trabalho em si **não** mudou de lugar. As funções que montam o contexto,
 executam ferramenta, contam token e traduzem erro do Bedrock continuam em
@@ -22,7 +22,7 @@ executam ferramenta, contam token e traduzem erro do Bedrock continuam em
 trabalho.
 
     START → triagem → rota_apos_triagem (condicional)
-              fora_de_escopo → resposta_direta → END
+              fora_de_escopo → resposta_direta → finalizar
               com_busca      → recuperar → conversar
               sem_busca      →             conversar
     conversar → rota_da_ferramenta (condicional)
@@ -30,15 +30,22 @@ trabalho.
               formalizar → formalizar
     formalizar → rota_apos_resposta (condicional)
               ampliar    → ampliar_busca → recuperar          ← ciclo
-              encaminhar → encaminhar → END
-              fim        → END
+              encaminhar → encaminhar → finalizar
+              fim        → finalizar
+    finalizar → END
 """
 import logging
-from typing import Literal, TypedDict
+from typing import Annotated, Literal, TypedDict
 
 from botocore.exceptions import ClientError
-from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
+from langchain_core.messages import (
+    AIMessage,
+    HumanMessage,
+    SystemMessage,
+    ToolMessage,
+)
 from langgraph.graph import END, START, StateGraph
+from langgraph.graph.message import add_messages
 from pydantic import BaseModel, Field
 
 # As funções de trabalho continuam em `assistente.py`; o que este arquivo faz é
@@ -95,11 +102,14 @@ class EstadoAtendimento(TypedDict, total=False):
 
     `total=False` porque cada node devolve um **dicionário parcial**: só as
     chaves que ele mudou. O LangGraph sobrescreve essas chaves no estado e passa
-    adiante — não há reducer aqui, e por isso não há acúmulo automático.
+    adiante.
 
-    Os campos são, um a um, as variáveis locais que `responder()` tinha. A
-    diferença é que agora elas têm nome no contrato, e qualquer node pode ler o
-    que outro escreveu sem ninguém passar parâmetro para ninguém.
+    Quase todos os campos são, um a um, as variáveis locais que `responder()`
+    tinha. A diferença é que agora elas têm nome no contrato, e qualquer node
+    pode ler o que outro escreveu sem ninguém passar parâmetro para ninguém.
+
+    A exceção é `historico`, e ela é de outra natureza: não é variável de um
+    turno, é a conversa. Ver o comentário do campo.
     """
 
     # Entrada — o que a interface escolheu
@@ -109,6 +119,17 @@ class EstadoAtendimento(TypedDict, total=False):
     temperatura: float
     modo: str
     auto_corrigir: bool
+    # A conversa até aqui, e o **único** campo que acumula.
+    #
+    # `add_messages` é um reducer: quando um node devolve algo nesta chave, o
+    # LangGraph *soma* ao que já estava lá em vez de substituir. Todos os outros
+    # campos sobrescrevem, e é isso que se quer deles — `fontes` do turno
+    # passado não tem nada a fazer no turno de agora. Aqui é o contrário:
+    # histórico que sobrescreve é histórico de um turno só.
+    #
+    # Guarda apenas texto: um par pergunta/resposta por turno, gravado pelo node
+    # `finalizar`. Ver lá por que só o texto entra.
+    historico: Annotated[list, add_messages]
     # Intermediários — o que era variável local do fluxo
     escopo: str
     mensagens: list
@@ -126,6 +147,34 @@ class EstadoAtendimento(TypedDict, total=False):
     # valor escrito, e a resposta da passada anterior continuaria ali dizendo
     # "já acabou".
     atendimento: Atendimento | None
+
+
+# O que volta ao zero no começo de cada turno.
+#
+# Isto não existia enquanto o estado morria com a execução: cada `invoke()`
+# começava de um estado vazio porque não havia estado anterior. Com o estado
+# gravado, a execução começa do que ficou lá — e o que ficou lá inclui os
+# intermediários do turno passado. `tentativas` valendo 1 de ontem faria a
+# ampliação de hoje desistir na primeira falha; `mensagens` do turno passado
+# entrariam na conversa deste; `atendimento` preenchido faria a primeira rota
+# achar que o fluxo já terminou.
+#
+# É um efeito de segunda ordem de guardar o estado, e ele não aparece em teste de
+# uma pergunta só: aparece na segunda pergunta da mesma conversa.
+#
+# `historico` é a única chave que **não** entra aqui — ela é justamente a que
+# deve atravessar os turnos.
+ESTADO_DO_TURNO = {
+    "escopo": "",
+    "mensagens": [],
+    "trechos": [],
+    "fontes": [],
+    "tokens_de_entrada": 0,
+    "passos": 0,
+    "top_k": None,
+    "tentativas": 0,
+    "atendimento": None,
+}
 
 
 # A triagem é a primeira decisão do grafo, e a mais barata: uma chamada curta que
@@ -180,17 +229,26 @@ class _Escopo(BaseModel):
 
 
 def _abrir_conversa(state: EstadoAtendimento) -> list:
-    """Monta as mensagens iniciais: sistema com o tom, contexto e a pergunta.
+    """Monta as mensagens iniciais: tom, conversa anterior, contexto e pergunta.
 
     A mensagem de contexto entra depois do `format_messages`, e é aí que ela
     escapa da formatação de template — um `{prazo}` escrito dentro de um
     documento seria lido como variável e a chamada quebraria. Vai antes da
     mensagem do cliente para o modelo ler a base antes de ler a pergunta.
+
+    A ordem das quatro partes não é arbitrária, e é ela que faz a memória
+    funcionar: instrução de tom, **conversa anterior**, documentos, pergunta de
+    agora. O histórico vai logo depois da instrução porque é conversa, não é
+    instrução nem documento — colocá-lo depois do contexto faria o modelo ler
+    turnos antigos como se fossem base de conhecimento.
     """
     mensagens = prompt.format_messages(
         instrucao_de_tom=PERFIS_DE_ATENDIMENTO[state["perfil"]]["instrucao_de_tom"],
         pergunta=state["pergunta"],
     )
+    historico = state.get("historico") or []
+    if historico:
+        mensagens[1:1] = historico
     trechos = state.get("trechos")
     if trechos:
         mensagens.insert(-1, _mensagem_de_contexto(trechos))
@@ -432,6 +490,34 @@ def encaminhar(state: EstadoAtendimento) -> dict:
     return {"atendimento": atendimento}
 
 
+def finalizar(state: EstadoAtendimento) -> dict:
+    """Grava no histórico o par pergunta/resposta deste turno.
+
+    É o único node que escreve na conversa, e está sozinho no fim de **todos** os
+    caminhos de propósito. Se a gravação morasse em quem produz a resposta, o
+    ciclo de ampliação — que passa duas vezes por `formalizar` — gravaria a mesma
+    pergunta duas vezes, e a resposta boa apareceria depois de uma pergunta
+    repetida. Um node terminal único roda uma vez por execução, seja qual for o
+    caminho: é o lugar certo para um efeito que tem de acontecer exatamente uma
+    vez.
+
+    **Só o texto entra.** As mensagens de trabalho do turno ficam fora, e não por
+    economia: uma `AIMessage` com `tool_calls` sem a `ToolMessage`
+    correspondente é conversa pela metade, e no turno seguinte o `bind_tools`
+    recebe um pedido de ferramenta sem resultado e a chamada é recusada. O
+    histórico guarda o que foi dito, não como foi produzido.
+    """
+    atendimento = state.get("atendimento")
+    if atendimento is None:
+        return {}
+    return {
+        "historico": [
+            HumanMessage(content=state["pergunta"]),
+            AIMessage(content=atendimento.resposta.resposta),
+        ]
+    }
+
+
 # --- Edges condicionais -----------------------------------------------------
 #
 # Uma rota só escolhe o próximo node: devolve uma string e não toca no estado.
@@ -525,8 +611,15 @@ def rota_apos_resposta(state: EstadoAtendimento) -> str:
 # --- Montagem ---------------------------------------------------------------
 
 
-def _construir_grafo():
-    """Declara os nodes, liga as edges e compila. Roda uma vez, no import."""
+def montar_grafo() -> StateGraph:
+    """Declara os nodes e liga as edges. Devolve a topologia **sem** compilar.
+
+    A montagem foi separada da compilação porque as duas passaram a acontecer em
+    momentos diferentes. A topologia é conhecida no import; o que a compilação
+    precisa — a conexão com o banco onde o estado é gravado — só existe depois
+    que a aplicação sobe. Manter a montagem pura deixa este arquivo continuar
+    sendo lido e desenhado sem banco nenhum de pé.
+    """
     grafo = StateGraph(EstadoAtendimento)
 
     grafo.add_node("triagem", triagem)
@@ -537,6 +630,7 @@ def _construir_grafo():
     grafo.add_node("formalizar", formalizar)
     grafo.add_node("ampliar_busca", ampliar_busca)
     grafo.add_node("encaminhar", encaminhar)
+    grafo.add_node("finalizar", finalizar)
 
     grafo.add_edge(START, "triagem")
     grafo.add_conditional_edges(
@@ -548,11 +642,13 @@ def _construir_grafo():
             "sem_busca": "conversar",
         },
     )
-    grafo.add_edge("resposta_direta", END)
+    # Nenhum caminho vai direto para END: todos passam por `finalizar`, que é
+    # quem grava o turno no histórico.
+    grafo.add_edge("resposta_direta", "finalizar")
     grafo.add_conditional_edges(
         "recuperar",
         rota_apos_recuperar,
-        {"conversar": "conversar", "fim": END},
+        {"conversar": "conversar", "fim": "finalizar"},
     )
     # O ciclo de ferramenta: a volta `executar_ferramentas → conversar` é a
     # aresta que antes era a próxima iteração do `for`.
@@ -562,7 +658,7 @@ def _construir_grafo():
         {
             "ferramenta": "executar_ferramentas",
             "formalizar": "formalizar",
-            "fim": END,
+            "fim": "finalizar",
         },
     )
     grafo.add_edge("executar_ferramentas", "conversar")
@@ -572,14 +668,49 @@ def _construir_grafo():
     grafo.add_conditional_edges(
         "formalizar",
         rota_apos_resposta,
-        {"ampliar": "ampliar_busca", "encaminhar": "encaminhar", "fim": END},
+        {"ampliar": "ampliar_busca", "encaminhar": "encaminhar", "fim": "finalizar"},
     )
     grafo.add_edge("ampliar_busca", "recuperar")
-    grafo.add_edge("encaminhar", END)
+    grafo.add_edge("encaminhar", "finalizar")
+    grafo.add_edge("finalizar", END)
 
-    return grafo.compile()
+    return grafo
 
 
-# Compilado uma única vez, no import do módulo: compilar por pergunta seria
-# refazer a mesma montagem a cada requisição.
-GRAFO = _construir_grafo()
+def compilar_grafo(checkpointer=None):
+    """Compila a topologia, com ou sem estado gravado entre execuções.
+
+    O `checkpointer` é o parâmetro que muda o alcance do estado: com ele, cada
+    passo do grafo é gravado sob a chave que vem no config (`thread_id`) e a
+    execução seguinte começa de lá. Sem ele, cada execução começa de um estado
+    vazio — que é exatamente o comportamento de antes, e é o caminho de quem
+    importa este módulo fora da aplicação.
+
+    `None` é um padrão de verdade, não uma conveniência: banco fora do ar
+    desliga a memória e mantém o atendimento respondendo.
+    """
+    return montar_grafo().compile(checkpointer=checkpointer)
+
+
+# O grafo que a aplicação usa. Fica num módulo e não numa constante de import
+# porque compilar passou a depender de um recurso externo: a conexão com o banco
+# é aberta pelo ciclo de vida da API, que roda depois do import.
+_grafo_compilado = None
+
+
+def definir_grafo(grafo) -> None:
+    """Guarda o grafo que a aplicação vai usar. Chamado uma vez, no boot."""
+    global _grafo_compilado
+    _grafo_compilado = grafo
+
+
+def grafo_ativo():
+    """O grafo em uso.
+
+    Compila um sem checkpointer se ninguém definiu nenhum — é o caso de quem
+    importa este módulo direto, num script ou num teste, sem subir a API.
+    """
+    global _grafo_compilado
+    if _grafo_compilado is None:
+        _grafo_compilado = compilar_grafo()
+    return _grafo_compilado

@@ -37,3 +37,14 @@ langchain-text-splitters==1.1.2
 # Ele NAO vinha de carona: o requirements pina langchain-core e langchain-aws,
 # nao o metapacote langchain, entao nada trazia langgraph antes desta linha.
 langgraph==1.2.11
+
+# Checkpointer do grafo em Postgres. Vem em pacote separado de proposito: o
+# langgraph traz de fabrica apenas o checkpointer em memoria, que morre junto
+# com o processo. Persistir o estado exige um backend, e este usa o mesmo
+# Postgres que ja guarda os vetores.
+#
+# Traz psycopg-pool e orjson como dependencias. Verificado por `pip list` dentro
+# da imagem construida: os pins de langchain-core (1.5.3), langgraph (1.2.11),
+# langchain-aws (1.6.4) e psycopg (3.3.4) continuam de pe — a resolucao nao
+# subiu nenhum deles.
+langgraph-checkpoint-postgres==3.1.2

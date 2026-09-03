@@ -28,6 +28,7 @@ funções; nenhuma delas sabe que existe um grafo.
 """
 import logging
 from functools import lru_cache
+from uuid import uuid4
 
 from botocore.exceptions import ClientError, NoCredentialsError
 from langchain_aws import ChatBedrockConverse
@@ -253,6 +254,22 @@ def _executar_ferramenta(chamada: dict) -> str:
         return f"A ferramenta {chamada['name']} falhou: {erro}"
 
 
+def config_da_conversa(conversa_id: str) -> dict:
+    """A chave sob a qual o estado é gravado e lido: `thread_id`.
+
+    É o que separa uma conversa da outra. Duas pessoas conversando ao mesmo
+    tempo com o mesmo atendente compartilham o processo, o grafo e o banco, e não
+    compartilham nada do que foi dito — porque cada uma entra com uma chave
+    diferente.
+
+    Um grafo compilado com checkpointer **recusa** a execução sem `thread_id`:
+    ele não tem onde gravar. Quando quem chama não informa nada, o turno ganha
+    uma chave nova e descartável: ele roda, grava, e ninguém volta a ler aquilo.
+    Vale para chamada solta à API, que não é conversa.
+    """
+    return {"configurable": {"thread_id": conversa_id or str(uuid4())}}
+
+
 def responder(
     pergunta: str,
     perfil: str,
@@ -260,29 +277,37 @@ def responder(
     temperatura: float = TEMPERATURA_PADRAO,
     modo: str = MODO_PADRAO,
     auto_corrigir: bool = False,
+    conversa_id: str = "",
 ) -> Atendimento:
     """Responde ao cliente executando o grafo do atendimento.
 
-    O que esta função faz hoje é só a fronteira: monta o estado inicial com o
-    que a interface escolheu, invoca o grafo e devolve o que ele deixou no
-    campo de saída. As decisões e o ciclo que antes moravam aqui estão em
-    `grafo.py`, onde dá para ler a topologia inteira de uma vez.
+    O que esta função faz é a fronteira: monta o estado do turno, invoca o grafo
+    na conversa certa e devolve o que ele deixou no campo de saída. As decisões e
+    o ciclo estão em `grafo.py`, onde dá para ler a topologia inteira de uma vez.
+
+    O `ESTADO_DO_TURNO` no meio do estado inicial é obrigatório, e o motivo não é
+    óbvio: com o estado gravado, a execução **não** começa vazia — começa do que
+    ficou do turno anterior. Zerar os intermediários é o que impede que a
+    contagem de ampliações e as mensagens de trabalho de ontem entrem no turno de
+    hoje. O que vem escrito depois do `**` vence: a pergunta e os controles
+    sobrescrevem o zero.
 
     O import é local para não fechar um ciclo: `grafo` importa as funções de
-    trabalho deste módulo. Na primeira pergunta o módulo é carregado e o grafo
-    compilado uma única vez; nas seguintes vem do cache de módulos do Python.
+    trabalho deste módulo.
     """
-    from app.grafo import GRAFO
+    from app.grafo import ESTADO_DO_TURNO, grafo_ativo
 
-    estado_final = GRAFO.invoke(
+    estado_final = grafo_ativo().invoke(
         {
+            **ESTADO_DO_TURNO,
             "pergunta": pergunta,
             "perfil": perfil,
             "modelo": modelo,
             "temperatura": temperatura,
             "modo": modo,
             "auto_corrigir": auto_corrigir,
-        }
+        },
+        config=config_da_conversa(conversa_id),
     )
     return estado_final["atendimento"]
 
