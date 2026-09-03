@@ -46,6 +46,9 @@ export default function App() {
   const [autoCorrigir, setAutoCorrigir] = useState(false)
   // Se o atendente usa a conversa anterior para responder este turno.
   const [memoriaAtiva, setMemoriaAtiva] = useState(true)
+  // Pede que a próxima execução pare num node, uma vez. Serve para ver o que o
+  // estado gravado permite: continuar de onde parou em vez de recomeçar.
+  const [interromperEm, setInterromperEm] = useState('')
 
   // Qual conversa é esta. Vai em cada pergunta e é a chave sob a qual o backend
   // grava o estado do fluxo — é ela que faz o atendente lembrar do turno
@@ -157,9 +160,29 @@ export default function App() {
           auto_corrigir: autoCorrigir,
           conversa_id: conversaId,
           memoria_ativa: memoriaAtiva,
+          interromper_em: interromperEm,
         }),
       })
       const dados = await resposta.json()
+
+      // A execução parou no meio: não há resposta para mostrar, há um turno
+      // pendente. O interruptor volta a zero porque ele é de um disparo só —
+      // deixá-lo ligado faria a retomada parecer não ter funcionado.
+      if (resposta.ok && dados.interrompido) {
+        setInterromperEm('')
+        setConversa((atual) => [
+          ...atual,
+          {
+            autor: 'atendente',
+            interrompido: true,
+            node: dados.node,
+            texto: dados.detalhe,
+            duracaoEmMs: performance.now() - inicio,
+          },
+        ])
+        return
+      }
+
       setConversa((atual) => [
         ...atual,
         {
@@ -200,6 +223,56 @@ export default function App() {
     } finally {
       setAguardandoResposta(false)
       campoDeTexto.current?.focus()
+    }
+  }
+
+  // Continua a execução que ficou pendente. O backend lê o estado gravado e roda
+  // só o que faltava — daí a resposta chegar com o custo do que já havia sido
+  // feito antes da parada, e não com um custo novo.
+  async function retomarExecucao(indice) {
+    if (aguardandoResposta) return
+    setAguardandoResposta(true)
+    const inicio = performance.now()
+    try {
+      const resposta = await fetch(`/api/conversas/${conversaId}/retomar`, {
+        method: 'POST',
+      })
+      const dados = await resposta.json()
+      setConversa((atual) => {
+        const proximo = [...atual]
+        if (proximo[indice]) proximo[indice] = { ...proximo[indice], retomado: true }
+        proximo.push({
+          autor: 'atendente',
+          texto: resposta.ok
+            ? dados.resposta
+            : dados.detail || 'Não foi possível retomar a execução.',
+          tipo: resposta.ok ? dados.tipo : null,
+          houveErro: !resposta.ok,
+          duracaoEmMs: performance.now() - inicio,
+          nomeDoModelo: modeloAtual?.nome,
+          nomeDoPerfil: perfilAtual?.nome,
+          nomeDoModo: modoAtual?.nome,
+          tokensDeEntrada: resposta.ok ? dados.tokens_de_entrada : null,
+          fontes: resposta.ok ? dados.fontes : null,
+          tentativas: resposta.ok ? dados.tentativas : null,
+          // De onde a execução continuou. Só aparece em turno retomado.
+          retomadoDe: resposta.ok ? dados.retomado_de : null,
+          temperaturaUsada: temperatura,
+        })
+        return proximo
+      })
+    } catch {
+      setConversa((atual) => [
+        ...atual,
+        {
+          autor: 'atendente',
+          texto: 'Falha de conexão com a API.',
+          houveErro: true,
+          duracaoEmMs: performance.now() - inicio,
+        },
+      ])
+    } finally {
+      setAguardandoResposta(false)
     }
   }
 
@@ -390,9 +463,27 @@ export default function App() {
                     {mensagem.tipo && (
                       <span className="chip-tipo">{NOME_DO_TIPO[mensagem.tipo] || mensagem.tipo}</span>
                     )}
-                    <div className={`bolha ${mensagem.houveErro ? 'erro' : ''}`}>
-                      {mensagem.texto}
-                    </div>
+                    {mensagem.interrompido ? (
+                      /* Turno pendente, e não turno errado: o que ele oferece é
+                         continuar, porque o passo anterior está gravado. */
+                      <div className="bolha interrompida">
+                        {mensagem.texto}
+                        {!mensagem.retomado && (
+                          <button
+                            type="button"
+                            className="retomar"
+                            onClick={() => retomarExecucao(indice)}
+                            disabled={aguardandoResposta}
+                          >
+                            Retomar execução
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      <div className={`bolha ${mensagem.houveErro ? 'erro' : ''}`}>
+                        {mensagem.texto}
+                      </div>
+                    )}
                     {/* Fora da bolha, como campo próprio: quem lê a resposta
                         consegue abrir o documento e conferir.
 
@@ -415,7 +506,9 @@ export default function App() {
                     )}
                     {/* Registra a configuração de cada turno: ao trocar um controle
                         e repetir a pergunta, a diferença fica documentada na tela. */}
-                    {mensagem.autor === 'atendente' && !mensagem.houveErro && (
+                    {mensagem.autor === 'atendente' &&
+                      !mensagem.houveErro &&
+                      !mensagem.interrompido && (
                       <span className="rodape-msg">
                         {mensagem.nomeDoModelo} · {mensagem.nomeDoPerfil} ·{' '}
                         {mensagem.nomeDoModo} · temp{' '}
@@ -444,6 +537,16 @@ export default function App() {
                             {mensagem.tentativas === 1
                               ? 'busca ampliada'
                               : 'buscas ampliadas'}
+                          </>
+                        )}
+                        {/* Só em turno retomado: diz de que node a execução
+                            continuou, em vez de deixar parecer que rodou inteira. */}
+                        {mensagem.retomadoDe?.length > 0 && (
+                          <>
+                            {' · '}retomado de{' '}
+                            <span className="num">
+                              {mensagem.retomadoDe.join(', ')}
+                            </span>
                           </>
                         )}
                       </span>
@@ -644,6 +747,36 @@ export default function App() {
               A pergunta do cliente não é reescrita — o que muda é quantos trechos
               a busca devolve na segunda tentativa. Se ainda assim não achar, o
               caso vai para a fila humana.
+            </p>
+          </div>
+
+          {/* Não é um controle de produto: é o que permite observar, com o código
+              que está no ar, o que o estado gravado garante quando um passo
+              falha. Vale um disparo e volta a zero sozinho. */}
+          <div className="campo">
+            <label>Interromper execução</label>
+            <div className="segmentado">
+              <button
+                type="button"
+                className={interromperEm ? '' : 'ativo'}
+                onClick={() => setInterromperEm('')}
+              >
+                <strong>Não</strong>
+                <span>A execução vai até o fim.</span>
+              </button>
+              <button
+                type="button"
+                className={interromperEm === 'formalizar' ? 'ativo' : ''}
+                onClick={() => setInterromperEm('formalizar')}
+              >
+                <strong>Parar em formalizar</strong>
+                <span>Depois da busca e da conversa, antes do formato.</span>
+              </button>
+            </div>
+            <p className="dica">
+              A próxima pergunta para nesse node. A resposta traz o botão de
+              retomar, e a retomada roda <strong>só o que faltava</strong> — a
+              busca e as idas ao modelo anteriores não se repetem.
             </p>
           </div>
 

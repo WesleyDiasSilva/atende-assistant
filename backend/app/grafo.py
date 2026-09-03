@@ -48,6 +48,8 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from pydantic import BaseModel, Field
 
+from app import falhas
+
 # As funções de trabalho continuam em `assistente.py`; o que este arquivo faz é
 # ligá-las numa ordem legível. O import é nominal de propósito: a lista abaixo é
 # o inventário exato do que a topologia precisa para funcionar.
@@ -347,6 +349,7 @@ def recuperar(state: EstadoAtendimento) -> dict:
     de conexão numa Exception genérica. Sem isto, banco fora do ar viraria 500
     com traceback na tela.
     """
+    falhas.interromper_se_armado("recuperar")
     modo = state["modo"]
     # `top_k` só está no estado quando a auto-correção passou por aqui. A
     # primeira passada não o define, e `_trechos_do_modo` cai no TOP_K padrão.
@@ -376,6 +379,7 @@ def conversar(state: EstadoAtendimento) -> dict:
     Só a primeira ida tem o token medido: é a que carrega os documentos, e é o
     número que dá para comparar entre os modos.
     """
+    falhas.interromper_se_armado("conversar")
     mensagens = state.get("mensagens") or _abrir_conversa(state)
     passos = state.get("passos", 0)
 
@@ -419,6 +423,7 @@ def formalizar(state: EstadoAtendimento) -> dict:
     duas coisas na mesma chamada é frágil. A separação que antes eram duas
     etapas dentro de uma função agora é visível na topologia.
     """
+    falhas.interromper_se_armado("formalizar")
     model = montar_modelo(state["modelo"], state["temperatura"])
     logger.info("[grafo] formalizar")
     try:

@@ -151,6 +151,31 @@ body {
   color: #8e1d38;
 }
 
+/* Turno que parou no meio. Nao usa o vermelho de erro de proposito: nada se
+   perdeu, o turno esta pendente — e a cor precisa dizer isso. */
+.bolha.interrompida {
+  border-color: #e2c98f;
+  background: #fdf8ec;
+  color: #6a5220;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 11px;
+}
+.retomar {
+  border: 1px solid #c9a961;
+  border-radius: var(--raio);
+  background: #fff;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #6a5220;
+  padding: 7px 13px;
+  cursor: pointer;
+}
+.retomar:hover:not(:disabled) { background: #fdf3e0; }
+.retomar:disabled { opacity: 0.5; cursor: not-allowed; }
+
 .rodape-msg { font-size: 11.5px; color: var(--tinta-3); margin-top: 6px; }
 
 /* Trechos que a busca recuperou, listados fora da bolha da resposta. */

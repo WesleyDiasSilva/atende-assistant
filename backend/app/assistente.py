@@ -314,6 +314,48 @@ def responder(
     return estado_final["atendimento"]
 
 
+def pendencia(conversa_id: str) -> tuple[str, ...]:
+    """Quais nodes ficaram pendentes nesta conversa. Vazio = nada a retomar.
+
+    Vem de `get_state`, que lê o estado gravado sem executar nada. O campo `next`
+    é a lista do que o grafo faria se fosse retomado agora — e ele fica
+    preenchido justamente quando uma execução parou no meio: o passo que quebrou
+    continua marcado como pendente, porque ele nunca chegou a concluir.
+
+    Numa conversa que terminou normalmente, `next` é vazio: não há o que
+    continuar.
+    """
+    from app.grafo import grafo_ativo
+
+    estado = grafo_ativo().get_state(config_da_conversa(conversa_id))
+    return tuple(estado.next or ())
+
+
+def retomar(conversa_id: str) -> tuple[Atendimento | None, str, str]:
+    """Continua uma execução interrompida, do último passo gravado.
+
+    O input é **`None`**, e é aí que está a diferença. Um dicionário no lugar
+    seria entendido como turno novo, e o grafo recomeçaria do START: refazendo a
+    busca e as idas ao modelo que já foram pagas antes da falha. Com `None`, o
+    grafo lê o estado gravado sob a `thread_id`, vê o que ficou pendente e roda
+    só isso — o que já estava feito continua feito.
+
+    Devolve o atendimento, a pergunta que originou o turno e o modelo que ele
+    usou. Os três vêm do estado gravado, e não de quem chama: quem retoma pode
+    não ser quem perguntou, e reinformar esses valores abriria a porta para a
+    retomada ser registrada com um modelo que não foi o usado.
+    """
+    from app.grafo import grafo_ativo
+
+    estado_final = grafo_ativo().invoke(None, config=config_da_conversa(conversa_id))
+    estado_final = estado_final or {}
+    return (
+        estado_final.get("atendimento"),
+        estado_final.get("pergunta", ""),
+        estado_final.get("modelo", ""),
+    )
+
+
 def traduzir_erro_do_bedrock(erro: ClientError, model_id: str) -> str:
     """Transforma o código de erro do Bedrock numa mensagem que o usuário entende."""
     detalhes = erro.response.get("Error", {})

@@ -10,6 +10,7 @@
     GET    /api/base/documentos            os documentos da base de conhecimento
     POST   /api/base/documentos            grava um .md e o indexa na hora
     DELETE /api/base/documentos/{arquivo}  remove o arquivo e os chunks dele
+    POST   /api/conversas/{conversa_id}/retomar  continua uma execucao pendente
 
 Responder faz três coisas: pede a resposta ao atendente, registra o
 atendimento para a contagem por assunto e, quando o caso precisa de uma
@@ -35,6 +36,7 @@ from app import (  # noqa: E402  (depois do load_dotenv, de propósito)
     dados,
     db,
     documentos,
+    falhas,
     grafo,
     log,
     memoria,
@@ -132,6 +134,10 @@ class PerguntaDoCliente(BaseModel):
     # acabou de ser dito é o comportamento esperado de um atendimento, e é
     # desligar que precisa ser um pedido explícito.
     memoria_ativa: bool = True
+    # Nome de um node onde a execução deve parar, uma vez. Serve para exercitar
+    # o caminho de retomada com o código que está no ar, em vez de alterar
+    # código para provocar a falha. Vazio no uso normal.
+    interromper_em: str = ""
 
 
 class DocumentoNovo(BaseModel):
@@ -216,6 +222,47 @@ def configuracao():
     }
 
 
+def _registrar_e_montar(atendimento, pergunta: str, modelo: str) -> dict:
+    """Registra os efeitos do turno e monta o JSON da resposta.
+
+    Fica numa função porque dois caminhos chegam aqui: o turno que rodou de uma
+    vez e o turno que foi retomado depois de parar no meio. Os dois produzem o
+    mesmo atendimento, e um caso resolvido na segunda tentativa conta na métrica
+    igual a qualquer outro — duplicar este trecho seria a maneira de os dois
+    caminhos divergirem com o tempo.
+
+    O retorno é uma instância do schema, não texto: a API devolve os campos e a
+    interface lê cada um pelo nome, sem procurar informação dentro da frase.
+
+    Os dois contratos saem achatados num JSON só. A interface não precisa saber
+    que um campo veio do modelo e o outro da medição — mas o código precisa, e é
+    por isso que eles são separados até aqui.
+    """
+    resposta = atendimento.resposta
+    # O campo `tipo` da resposta é o que torna a contagem por assunto possível:
+    # a classificação chega junto com o texto, sem uma segunda chamada ao modelo.
+    dados.registrar_atendimento(tipo=resposta.tipo.value, pergunta=pergunta, modelo=modelo)
+
+    # O encaminhamento é uma decisão do modelo, mas quem resolve é uma pessoa:
+    # o caso entra na fila e fica aberto até alguém fechá-lo.
+    if resposta.precisa_de_humano:
+        dados.registrar_solicitacao(
+            origem="encaminhamento",
+            assunto=resposta.tipo.value,
+            motivo=resposta.motivo or "Sem motivo informado.",
+            pergunta=pergunta,
+        )
+
+    return {
+        **resposta.model_dump(),
+        "tokens_de_entrada": atendimento.tokens_de_entrada,
+        "fontes": atendimento.fontes,
+        # Quantas vezes o fluxo ampliou a busca para chegar nesta resposta. Zero
+        # no caminho normal; a interface só o mostra quando houve volta.
+        "tentativas": atendimento.tentativas,
+    }
+
+
 @app.post("/api/responder")
 def responder(pergunta_do_cliente: PerguntaDoCliente):
     if pergunta_do_cliente.perfil not in PERFIS_DE_ATENDIMENTO:
@@ -227,48 +274,79 @@ def responder(pergunta_do_cliente: PerguntaDoCliente):
     if not _disponibilidade(pergunta_do_cliente.modo)["disponivel"]:
         raise HTTPException(status_code=400, detail=MOTIVO_KB_AUSENTE)
 
-    atendimento = assistente.responder(
-        pergunta_do_cliente.pergunta,
-        pergunta_do_cliente.perfil,
-        pergunta_do_cliente.modelo,
-        pergunta_do_cliente.temperatura,
-        pergunta_do_cliente.modo,
-        pergunta_do_cliente.auto_corrigir,
-        pergunta_do_cliente.conversa_id,
-        pergunta_do_cliente.memoria_ativa,
-    )
-    resposta = atendimento.resposta
-    # O campo `tipo` da resposta é o que torna a contagem por assunto possível:
-    # a classificação chega junto com o texto, sem uma segunda chamada ao modelo.
-    dados.registrar_atendimento(
-        tipo=resposta.tipo.value,
-        pergunta=pergunta_do_cliente.pergunta,
-        modelo=pergunta_do_cliente.modelo,
+    if pergunta_do_cliente.interromper_em:
+        if not falhas.armar(pergunta_do_cliente.interromper_em):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Não é possível interromper nesse ponto. Aceitos: "
+                    + ", ".join(falhas.NODES_INTERROMPIVEIS)
+                    + "."
+                ),
+            )
+
+    try:
+        atendimento = assistente.responder(
+            pergunta_do_cliente.pergunta,
+            pergunta_do_cliente.perfil,
+            pergunta_do_cliente.modelo,
+            pergunta_do_cliente.temperatura,
+            pergunta_do_cliente.modo,
+            pergunta_do_cliente.auto_corrigir,
+            pergunta_do_cliente.conversa_id,
+            pergunta_do_cliente.memoria_ativa,
+        )
+    except falhas.ExecucaoInterrompida as parada:
+        # A execução parou, e o pedido não foi malformado: devolver 4xx ou 500
+        # diria a coisa errada. O que aconteceu é que o turno ficou **pendente**,
+        # e isso é um estado do recurso, não um erro de quem chamou — então sai
+        # como resposta normal, com o campo que diz onde parou.
+        #
+        # Nada é registrado na métrica nem na fila: não houve atendimento ainda.
+        return {
+            "interrompido": True,
+            "node": parada.node,
+            "conversa_id": pergunta_do_cliente.conversa_id,
+            "detalhe": (
+                f"A execução parou em '{parada.node}'. O que os passos anteriores "
+                "produziram está gravado no checkpoint desta conversa: retomar "
+                "continua daquele ponto, sem refazer o que já foi feito."
+            ),
+        }
+
+    return _registrar_e_montar(
+        atendimento, pergunta_do_cliente.pergunta, pergunta_do_cliente.modelo
     )
 
-    # O encaminhamento é uma decisão do modelo, mas quem resolve é uma pessoa:
-    # o caso entra na fila e fica aberto até alguém fechá-lo.
-    if resposta.precisa_de_humano:
-        dados.registrar_solicitacao(
-            origem="encaminhamento",
-            assunto=resposta.tipo.value,
-            motivo=resposta.motivo or "Sem motivo informado.",
-            pergunta=pergunta_do_cliente.pergunta,
+
+@app.post("/api/conversas/{conversa_id}/retomar")
+def retomar_conversa(conversa_id: str):
+    """Continua a execução que ficou pendente nesta conversa.
+
+    O 409 não é capricho: pedir para retomar o que não parou é um conflito com o
+    estado do recurso, e devolver 200 com uma resposta antiga esconderia que
+    nada foi retomado.
+    """
+    pendentes = assistente.pendencia(conversa_id)
+    if not pendentes:
+        raise HTTPException(
+            status_code=409,
+            detail="Não há execução pendente nesta conversa.",
         )
 
-    # O retorno é uma instância do schema, não texto: a API devolve os campos e
-    # a interface lê cada um pelo nome, sem procurar informação dentro da frase.
-    #
-    # Os dois contratos saem achatados num JSON só. A interface não precisa saber
-    # que um campo veio do modelo e o outro da medição — mas o código precisa, e
-    # é por isso que eles são separados até aqui.
+    atendimento, pergunta, modelo = assistente.retomar(conversa_id)
+    if atendimento is None:
+        raise HTTPException(
+            status_code=500,
+            detail="A retomada terminou sem produzir resposta.",
+        )
+
     return {
-        **resposta.model_dump(),
-        "tokens_de_entrada": atendimento.tokens_de_entrada,
-        "fontes": atendimento.fontes,
-        # Quantas vezes o fluxo ampliou a busca para chegar nesta resposta. Zero
-        # no caminho normal; a interface só o mostra quando houve volta.
-        "tentativas": atendimento.tentativas,
+        **_registrar_e_montar(atendimento, pergunta, modelo),
+        # De onde a retomada continuou. É o que mostra que ela não recomeçou do
+        # começo: só o que estava pendente voltou a rodar.
+        "retomado_de": list(pendentes),
+        "pergunta": pergunta,
     }
 
 
