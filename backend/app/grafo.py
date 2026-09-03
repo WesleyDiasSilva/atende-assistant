@@ -304,7 +304,14 @@ def triagem(state: EstadoAtendimento) -> dict:
     calaria um cliente legítimo; um falso "no escopo" só custa o fluxo normal,
     que já sabe recusar o que não está na base. Os dois erros não são
     simétricos, e a escolha do padrão segue o mais barato dos dois.
+
+    ⚠️ A classificação olha **só a mensagem deste turno**. O histórico existe no
+    estado e é lido mais adiante, na montagem da conversa — mas não aqui. Uma
+    frase que só faz sentido dentro da conversa ("e o nome do cliente?") chega à
+    triagem sem a conversa, e é julgada como se fosse a primeira coisa dita: o
+    fluxo lembra, a porta de entrada dele não.
     """
+    _registrar_memoria(state)
     model = montar_modelo(state["modelo"], TEMPERATURA_MINIMA)
     try:
         classificacao = model.with_structured_output(_Escopo).invoke(
@@ -320,6 +327,26 @@ def triagem(state: EstadoAtendimento) -> dict:
 
     logger.info("[triagem] %s pergunta=%r", escopo, state["pergunta"])
     return {"escopo": escopo}
+
+
+def _registrar_memoria(state: EstadoAtendimento) -> None:
+    """Diz no log quanto da conversa anterior entrou neste turno.
+
+    Fica no primeiro node de propósito: é o começo do turno, e é onde a leitura
+    do estado gravado acabou de acontecer. Uma linha por turno, com o número de
+    mensagens — que é o que separa "não lembrou" de "não tinha o que lembrar",
+    duas coisas que produzem a mesma resposta e têm consertos diferentes.
+
+    Existe para não ser preciso abrir o banco para responder essa pergunta.
+    """
+    historico = state.get("historico") or []
+    if not state.get("memoria_ativa"):
+        logger.info(
+            "[memoria] desligada; %d mensagem(ns) gravada(s) e nao lidas",
+            len(historico),
+        )
+        return
+    logger.info("[memoria] ativa; %d mensagem(ns) entraram no turno", len(historico))
 
 
 def resposta_direta(state: EstadoAtendimento) -> dict:
@@ -365,6 +392,21 @@ def recuperar(state: EstadoAtendimento) -> dict:
         "[grafo] recuperar modo=%s top_k=%s trechos=%d",
         modo, top_k or "padrao", len(trechos),
     )
+    # ⚠️ A consulta que foi ao retriever é a pergunta do turno, literal. O
+    # histórico não chega até aqui: ele entra depois, em `_abrir_conversa`, já
+    # como mensagem para o modelo.
+    #
+    # A consequência aparece num follow-up. "E quanto tempo demora?" é o texto
+    # que o retriever recebe — sem o assunto que ficou no turno anterior. O
+    # modelo lembra do assunto; a busca não. Nos modos sem busca isso não
+    # existe, e é por isso que o registro só sai quando havia histórico e a
+    # busca aconteceu.
+    if state.get("memoria_ativa") and state.get("historico") and modo in MODOS_COM_BUSCA:
+        logger.info(
+            "[memoria] a busca usou a pergunta literal do turno: %r "
+            "(o historico nao entra na consulta)",
+            state["pergunta"],
+        )
     return {"trechos": trechos, "fontes": fontes}
 
 
