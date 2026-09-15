@@ -230,6 +230,24 @@ estar na base, só não entre os primeiros colocados.
 O ciclo tem teto (uma ampliação) porque ciclo sem teto num grafo é o mesmo
 problema do laço sem teto numa função: ele não termina.
 
+**Bifurcação e junção.** *Onde está o meu pedido 81030 e qual a política de
+troca?* são duas perguntas de naturezas diferentes: uma só o sistema responde, a
+outra só a base. Uma rota única atende uma das duas e responde metade com toda a
+confiança.
+
+A triagem reconhece esse caso e manda a pergunta para `bifurcar`, que a separa em
+duas metades. De lá saem duas arestas, e o LangGraph executa os dois ramos **no
+mesmo passo**: `ramo_do_pedido` consulta a ferramenta, `ramo_da_regra` busca nos
+documentos. `juntar` recebe aresta dos dois e por isso só é agendado quando os
+dois concluíram — a espera é a topologia, não um contador no código.
+
+A junção é uma ida ao modelo, e não uma concatenação: as duas metades podem se
+condicionar. Um pedido cancelado muda o que a política de troca permite, e grudar
+os dois parágrafos entregaria ao cliente uma regra que não vale para o caso dele.
+
+Cada ramo recebe só a sua metade. A busca do ramo da regra não leva o número do
+pedido junto — número não descreve assunto, e deslocaria o ranking.
+
 ## O caminho percorrido
 
 Cada resposta traz o campo `trajetoria`: os nodes por onde a pergunta passou, na
@@ -244,6 +262,26 @@ um nome só. Por isso ele é declarado com um **reducer**
 que o rastro recomeça a cada turno, e o histórico não.
 
 O que ele registra é nome de node e ordem. Nada mais.
+
+É no caso composto que o rastro mostra mais: os dois ramos aparecem lado a lado,
+na ordem em que terminaram — que não é a ordem em que começaram, porque eles
+começaram juntos.
+
+## Duas formas de escrita no mesmo estado
+
+O fan-out coloca as duas lado a lado, e elas pedem tratamentos opostos.
+
+O **rastro acumula**: os dois ramos escrevem em `trajetoria` no mesmo passo, e o
+que se quer é a soma. Isso é reducer — e sem ele o LangGraph nem aceitaria os
+dois escritores concorrentes.
+
+As **respostas parciais não acumulam**: `resposta_do_pedido` e
+`resposta_da_regra` são coisas diferentes, uma vinda do sistema e a outra da
+base. Cada uma tem um escritor só, e vai num campo próprio, sem reducer. Somá-las
+numa lista entregaria a `juntar` duas respostas sem etiqueta, e ele precisa saber
+qual é qual: uma é dado daquele cliente, a outra é política da loja.
+
+Reducer resolve acúmulo. Composição pede critério, e o critério mora num node.
 
 ## Os cinco controles da interface
 

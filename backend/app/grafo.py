@@ -24,6 +24,8 @@ trabalho.
     START → triagem → rota_apos_triagem (condicional)
               fora_de_escopo → resposta_direta → finalizar
               conversacional → responder_do_historico → finalizar
+              composta       → bifurcar ─┬→ ramo_do_pedido ─┬→ juntar → finalizar
+                                         └→ ramo_da_regra  ─┘   (em paralelo)
               com_busca      → recuperar → conversar
               sem_busca      →             conversar
     conversar → rota_da_ferramenta (condicional)
@@ -75,6 +77,7 @@ from app.config import (
     TOP_K_AMPLIADO,
 )
 from app.schemas import Atendimento, RespostaAtendimento, TipoDeAtendimento
+from app.tools import consultar_status_pedido
 
 logger = logging.getLogger(__name__)
 
@@ -167,6 +170,24 @@ class EstadoAtendimento(TypedDict, total=False):
     trajetoria: Annotated[list[str], acumular_trajetoria]
     # Intermediários — o que era variável local do fluxo
     escopo: str
+    # As duas metades de uma pergunta composta, e as duas respostas parciais que
+    # os ramos produzem a partir delas.
+    #
+    # São quatro campos de sobrescrita, e não um campo com reducer, porque o que
+    # chega aqui não é a mesma coisa vinda de dois lugares: é o dado do pedido de
+    # um lado e a regra da base do outro. Somar os dois numa lista entregaria ao
+    # node de junção duas respostas sem etiqueta, e ele precisa saber qual é qual
+    # para compor — a metade que veio do sistema vale como dado daquele cliente,
+    # a que veio da base vale como política. Reducer resolve acúmulo; isto é
+    # composição, e composição pede critério.
+    #
+    # Cada campo tem **um** escritor, que é o que os mantém sem reducer: dois
+    # nodes concorrentes escrevendo no mesmo campo de sobrescrita é justamente o
+    # que o LangGraph recusa.
+    parte_do_pedido: str
+    parte_da_regra: str
+    resposta_do_pedido: str
+    resposta_da_regra: str
     mensagens: list
     trechos: list[tuple[str, str]]
     fontes: list[str]
@@ -202,6 +223,10 @@ class EstadoAtendimento(TypedDict, total=False):
 ESTADO_DO_TURNO = {
     "escopo": "",
     "trajetoria": [],
+    "parte_do_pedido": "",
+    "parte_da_regra": "",
+    "resposta_do_pedido": "",
+    "resposta_da_regra": "",
     "mensagens": [],
     "trechos": [],
     "fontes": [],
@@ -221,12 +246,14 @@ INSTRUCAO_DA_TRIAGEM = """Você é a triagem do atendimento de uma loja de produ
 
 - "atendimento": qualquer assunto da loja — pedido, entrega, prazo, rastreamento, troca, devolução, reclamação, pagamento, nota fiscal, cupom, cadastro, assinatura, ou dúvida sobre produto, conservação, validade e preparo.
 - "conversacional": a mensagem pergunta sobre a própria conversa — o que foi dito, perguntado ou respondido nos turnos anteriores. O assunto dela é o diálogo, e não o sistema da loja.
+- "composta": a mensagem traz duas perguntas de naturezas diferentes ao mesmo tempo — uma sobre um pedido específico (dado que só o sistema tem) e outra sobre uma regra, política ou prazo da loja (informação que está nos documentos).
 - "fora_de_escopo": saudação e conversa fiada, e temas alheios à loja (clima, esportes, notícias, piadas, receitas, conhecimento geral, pedido de ajuda com outro assunto).
 
-Dois desempates, nesta ordem:
+Três desempates, nesta ordem:
 
 1. Entre "atendimento" e "conversacional", escolha "atendimento". Repetir uma consulta é pedir o dado outra vez, e o dado pode ter mudado desde a resposta anterior: uma mensagem só é "conversacional" quando pergunta o que foi **dito**, e não o que está **no sistema**.
-2. Entre "atendimento" e "fora_de_escopo", escolha "atendimento": o fluxo normal sabe recusar o que não está na base, e barrar um cliente legítimo é o erro mais caro dos dois.
+2. Entre "atendimento" e "composta", escolha "atendimento". Só é "composta" quando as duas metades existem de verdade **e** são de naturezas diferentes: duas perguntas sobre o mesmo pedido continuam sendo "atendimento", e duas perguntas sobre regras também.
+3. Entre "atendimento" e "fora_de_escopo", escolha "atendimento": o fluxo normal sabe recusar o que não está na base, e barrar um cliente legítimo é o erro mais caro dos dois.
 
 Exemplos:
 - "onde está o meu pedido 81030?" → atendimento
@@ -239,6 +266,10 @@ Exemplos:
 - "qual foi o número do pedido que eu te passei?" → conversacional
 - "o que eu te perguntei antes?" → conversacional
 - "pode repetir a sua última resposta?" → conversacional
+- "onde está o meu pedido 81030 e qual a política de troca?" → composta
+- "o pedido 80412 já foi entregue e quantos dias eu tenho para pedir a troca?" → composta
+- "onde está o meu pedido 81030 e quando ele chega?" → atendimento
+- "qual a política de troca e quanto tempo ela dura?" → atendimento
 - "qual a previsão do tempo pra amanhã?" → fora_de_escopo
 - "oi, tudo bem?" → fora_de_escopo
 - "me conta uma piada" → fora_de_escopo"""
@@ -272,8 +303,36 @@ TEXTO_SEM_HISTORICO = (
 )
 
 
+# O ramo do pedido enxerga uma ferramenta só. `FERRAMENTAS` inclui a abertura de
+# solicitação de troca, que **grava**: numa pergunta composta o cliente pediu
+# informação sobre a política, não a troca em si, e um ramo que abre protocolo por
+# conta própria transformaria uma dúvida num registro no sistema.
+FERRAMENTAS_DO_PEDIDO = [consultar_status_pedido]
+
+# Quantas idas ao modelo o ramo do pedido pode fazer: uma para pedir a
+# ferramenta, outra para escrever com o resultado na mão. O ramo responde a uma
+# pergunta só, sobre um pedido só — não é o ciclo aberto de `conversar`.
+MAXIMO_DE_PASSOS_DO_RAMO = 2
+
+INSTRUCAO_DA_BIFURCACAO = """A mensagem do cliente traz duas perguntas ao mesmo tempo: uma sobre um pedido específico e outra sobre uma regra, política ou prazo da loja.
+
+Separe as duas. Reescreva cada metade como uma pergunta completa, que se entenda sozinha, usando as palavras do cliente. Não responda nenhuma delas e não acrescente pergunta que ele não fez."""
+
+INSTRUCAO_DO_RAMO_DO_PEDIDO = """Você atende uma loja de produtos congelados e está respondendo apenas à parte da pergunta que é sobre um pedido específico.
+
+Consulte o pedido pela ferramenta e relate o que ela devolveu. Não fale de política, prazo de troca ou condição da loja: outra etapa cuida dessa parte. Escreva em duas ou três frases, sem saudação e sem oferta de ajuda adicional."""
+
+INSTRUCAO_DO_RAMO_DA_REGRA = """Você atende uma loja de produtos congelados e está respondendo apenas à parte da pergunta que é sobre regra, política ou prazo.
+
+Não fale de nenhum pedido específico nem cite número de pedido: outra etapa cuida dessa parte. Escreva em duas ou três frases, sem saudação e sem oferta de ajuda adicional."""
+
+INSTRUCAO_DA_JUNCAO = """Abaixo estão duas respostas parciais à pergunta do cliente: uma foi consultada no sistema, sobre o pedido dele; a outra veio da base de conhecimento, sobre a regra que ele perguntou.
+
+Escreva uma resposta única que entregue as duas, nessa ordem, ligando-as quando uma condiciona a outra — por exemplo, quando a situação do pedido muda o que a regra permite. Use apenas o que está nas duas partes: não acrescente informação, não repita a mesma frase duas vezes e não deixe nenhuma das duas perguntas sem resposta."""
+
+
 class _Escopo(BaseModel):
-    """A saída da triagem: um campo só, com três opções fechadas.
+    """A saída da triagem: um campo só, com quatro opções fechadas.
 
     Structured output com `Literal` em vez de texto livre porque o valor vai
     alimentar uma rota do grafo. Uma classificação que volta como frase teria de
@@ -281,12 +340,40 @@ class _Escopo(BaseModel):
     é exatamente o que a saída estruturada existe para evitar.
     """
 
-    escopo: Literal["atendimento", "conversacional", "fora_de_escopo"] = Field(
+    escopo: Literal[
+        "atendimento", "conversacional", "composta", "fora_de_escopo"
+    ] = Field(
         description=(
             "'atendimento' se a mensagem é assunto da loja; 'conversacional' se "
-            "ela pergunta sobre o que já foi dito nesta conversa; "
-            "'fora_de_escopo' para saudação, conversa fiada e temas alheios à "
-            "loja."
+            "ela pergunta sobre o que já foi dito nesta conversa; 'composta' se "
+            "ela junta uma pergunta sobre um pedido específico e outra sobre "
+            "uma regra da loja; 'fora_de_escopo' para saudação, conversa fiada "
+            "e temas alheios à loja."
+        )
+    )
+
+
+class _PartesDaPergunta(BaseModel):
+    """As duas metades de uma pergunta composta, separadas para os dois ramos.
+
+    Cada ramo recebe só a sua metade, e não a pergunta inteira: a busca vetorial
+    do ramo da regra levaria junto o número do pedido, que não descreve assunto
+    nenhum e desloca o ranking; e o ramo do pedido levaria junto o texto da
+    política, que o faria discutir a regra em vez de consultar o dado.
+    """
+
+    parte_do_pedido: str = Field(
+        description=(
+            "A metade que precisa do sistema: o que o cliente perguntou sobre um "
+            "pedido específico, reescrito como pergunta completa e com o número "
+            "do pedido."
+        )
+    )
+    parte_da_regra: str = Field(
+        description=(
+            "A metade que precisa dos documentos: o que o cliente perguntou "
+            "sobre regra, política, prazo ou condição da loja, reescrito como "
+            "pergunta completa e sem o número do pedido."
         )
     )
 
@@ -322,6 +409,25 @@ def _abrir_conversa(state: EstadoAtendimento) -> list:
     if trechos:
         mensagens.insert(-1, _mensagem_de_contexto(trechos))
     return mensagens
+
+
+def _texto_da_mensagem(mensagem) -> str:
+    """O texto de uma resposta do modelo, venha ela como string ou como blocos.
+
+    O `ChatBedrockConverse` devolve `content` como lista de blocos quando a
+    resposta mistura texto e pedido de ferramenta. Os outros nodes não esbarram
+    nisso porque leem a resposta pelo schema, com `with_structured_output`; os
+    ramos leem o texto cru, e precisam aceitar as duas formas.
+    """
+    conteudo = mensagem.content
+    if isinstance(conteudo, str):
+        return conteudo.strip()
+    partes = [
+        bloco.get("text", "")
+        for bloco in conteudo
+        if isinstance(bloco, dict) and bloco.get("type", "text") == "text"
+    ]
+    return "\n".join(parte for parte in partes if parte).strip()
 
 
 def _falha_do_bedrock(state: EstadoAtendimento, erro: ClientError) -> dict:
@@ -668,6 +774,202 @@ def encaminhar(state: EstadoAtendimento) -> dict:
     return {"atendimento": atendimento, "trajetoria": ["encaminhar"]}
 
 
+def bifurcar(state: EstadoAtendimento) -> dict:
+    """Separa a pergunta composta nas duas metades que os ramos vão responder.
+
+    É o node de bifurcação, e ele não decide **se** o fluxo se divide — isso já
+    veio da triagem. O que ele faz é preparar a divisão: sem separar as metades,
+    os dois ramos receberiam a mesma frase inteira e cada um teria de ignorar
+    metade dela por conta própria.
+
+    Roda em temperatura mínima, como a triagem: separar não é redigir, e a mesma
+    pergunta tem de se dividir sempre do mesmo jeito.
+
+    Falha aqui não interrompe nada — os dois ramos recebem a pergunta inteira e
+    respondem o que conseguirem dela. Metade da resposta é melhor do que erro.
+    """
+    model = montar_modelo(state["modelo"], TEMPERATURA_MINIMA)
+    try:
+        partes = model.with_structured_output(_PartesDaPergunta).invoke(
+            [
+                SystemMessage(content=INSTRUCAO_DA_BIFURCACAO),
+                HumanMessage(content=state["pergunta"]),
+            ]
+        )
+        parte_do_pedido = partes.parte_do_pedido
+        parte_da_regra = partes.parte_da_regra
+    except Exception as erro:
+        logger.warning("bifurcacao falhou, os dois ramos recebem a pergunta inteira: %s", erro)
+        parte_do_pedido = parte_da_regra = state["pergunta"]
+
+    logger.info(
+        "[grafo] bifurcar pedido=%r regra=%r", parte_do_pedido, parte_da_regra
+    )
+    return {
+        "trajetoria": ["bifurcar"],
+        "parte_do_pedido": parte_do_pedido,
+        "parte_da_regra": parte_da_regra,
+    }
+
+
+def ramo_do_pedido(state: EstadoAtendimento) -> dict:
+    """Um dos dois ramos: consulta o dado do pedido e escreve a metade dele.
+
+    Roda ao mesmo tempo que `ramo_da_regra`, e os dois não se veem: cada um lê o
+    estado que `bifurcar` deixou e escreve num campo só seu. É isso que permite
+    que o LangGraph os execute no mesmo passo — e é por isso que nenhum dos dois
+    pode escrever no campo do outro.
+
+    O ciclo de ferramenta daqui tem duas idas e nada mais. Ele não é o
+    `conversar`, que conversa até o modelo parar de pedir: aqui a pergunta é uma
+    só, sobre um pedido só.
+    """
+    consulta = state.get("parte_do_pedido") or state["pergunta"]
+    model = montar_modelo(state["modelo"], state["temperatura"]).bind_tools(
+        FERRAMENTAS_DO_PEDIDO
+    )
+    mensagens = [
+        SystemMessage(content=INSTRUCAO_DO_RAMO_DO_PEDIDO),
+        HumanMessage(content=consulta),
+    ]
+    logger.info("[grafo] ramo_do_pedido consulta=%r", consulta)
+    try:
+        for _ in range(MAXIMO_DE_PASSOS_DO_RAMO):
+            resposta = model.invoke(mensagens)
+            mensagens.append(resposta)
+            if not resposta.tool_calls:
+                break
+            for chamada in resposta.tool_calls:
+                mensagens.append(
+                    ToolMessage(
+                        content=_executar_ferramenta(chamada),
+                        tool_call_id=chamada["id"],
+                    )
+                )
+    except ClientError as erro:
+        # A falha vira a resposta parcial deste ramo, e não uma exceção: o outro
+        # ramo continua rodando, e a junção entrega o que conseguiu apurar em vez
+        # de derrubar a pergunta inteira.
+        return {
+            "trajetoria": ["ramo_do_pedido"],
+            "resposta_do_pedido": traduzir_erro_do_bedrock(
+                erro, MODELOS[state["modelo"]]["model_id"]
+            ),
+        }
+
+    return {
+        "trajetoria": ["ramo_do_pedido"],
+        "resposta_do_pedido": _texto_da_mensagem(mensagens[-1]),
+    }
+
+
+def ramo_da_regra(state: EstadoAtendimento) -> dict:
+    """O outro ramo: busca a regra nos documentos e escreve a metade dela.
+
+    Faz o trabalho de `recuperar` e o de `conversar` numa passada só, e sem
+    ferramenta: a metade que chega aqui pergunta sobre política, e política está
+    na base — não no sistema de pedidos.
+
+    A consulta que vai ao retriever é a metade reescrita por `bifurcar`, sem o
+    número do pedido. É o único node em que a consulta difere da pergunta do
+    cliente, e a diferença não é reescrita: é recorte do que ele mesmo disse.
+
+    É também o único dos dois ramos que escreve `fontes`, `trechos` e
+    `tokens_de_entrada` — campos de sobrescrita, que dois escritores no mesmo
+    passo tornariam inválidos.
+    """
+    modo = state["modo"]
+    consulta = state.get("parte_da_regra") or state["pergunta"]
+    try:
+        trechos = _trechos_do_modo(modo, consulta)
+    except Exception as erro:
+        logger.exception("falha ao montar o contexto no modo %s", modo)
+        return {
+            "trajetoria": ["ramo_da_regra"],
+            "resposta_da_regra": _falha_da_base(erro).resposta,
+            "trechos": [],
+            "fontes": [],
+        }
+
+    mensagens = [SystemMessage(content=INSTRUCAO_DO_RAMO_DA_REGRA)]
+    if trechos:
+        mensagens.append(_mensagem_de_contexto(trechos))
+    mensagens.append(HumanMessage(content=consulta))
+
+    model = montar_modelo(state["modelo"], state["temperatura"])
+    logger.info(
+        "[grafo] ramo_da_regra consulta=%r trechos=%d", consulta, len(trechos)
+    )
+    try:
+        resposta = model.invoke(mensagens)
+    except ClientError as erro:
+        return {
+            "trajetoria": ["ramo_da_regra"],
+            "resposta_da_regra": traduzir_erro_do_bedrock(
+                erro, MODELOS[state["modelo"]]["model_id"]
+            ),
+            "trechos": trechos,
+            "fontes": _fontes(modo, trechos),
+        }
+
+    return {
+        "trajetoria": ["ramo_da_regra"],
+        "resposta_da_regra": _texto_da_mensagem(resposta),
+        "trechos": trechos,
+        "fontes": _fontes(modo, trechos),
+        "tokens_de_entrada": _tokens_de_entrada(resposta),
+    }
+
+
+def juntar(state: EstadoAtendimento) -> dict:
+    """Só roda quando os dois ramos terminaram, e compõe a resposta final.
+
+    A espera não é programada: ela é a topologia. Um node cujas arestas de
+    entrada vêm dos dois ramos só é agendado quando os dois concluíram — não há
+    sinalização nem contador em lugar nenhum deste arquivo.
+
+    A composição é uma ida ao modelo, e não uma concatenação, porque as duas
+    metades podem se condicionar: um pedido cancelado muda o que a política de
+    troca permite, e grudar os dois parágrafos entregaria ao cliente uma regra
+    que não vale para o caso dele.
+
+    As duas partes entram etiquetadas — qual veio do sistema e qual veio da base
+    — porque elas não têm o mesmo peso: uma é dado daquele cliente, a outra é
+    política da loja.
+    """
+    do_pedido = state.get("resposta_do_pedido") or "Sem informação sobre o pedido."
+    da_regra = state.get("resposta_da_regra") or "Sem informação sobre a regra."
+    partes = (
+        f"PARTE CONSULTADA NO SISTEMA (sobre o pedido do cliente):\n{do_pedido}"
+        f"\n\nPARTE VINDA DA BASE DE CONHECIMENTO (sobre a regra da loja):\n{da_regra}"
+    )
+    mensagens = [
+        SystemMessage(
+            content=PERFIS_DE_ATENDIMENTO[state["perfil"]]["instrucao_de_tom"]
+        ),
+        SystemMessage(content=INSTRUCAO_DA_JUNCAO),
+        SystemMessage(content=partes),
+        HumanMessage(content=state["pergunta"]),
+    ]
+
+    model = montar_modelo(state["modelo"], state["temperatura"])
+    logger.info("[grafo] juntar as duas respostas parciais")
+    try:
+        resposta = model.with_structured_output(RespostaAtendimento).invoke(mensagens)
+    except ClientError as erro:
+        return {"trajetoria": ["juntar"], **_falha_do_bedrock(state, erro)}
+
+    return {
+        "trajetoria": ["juntar"],
+        "atendimento": Atendimento(
+            resposta=resposta,
+            tokens_de_entrada=state.get("tokens_de_entrada", 0),
+            fontes=state.get("fontes", []),
+            tentativas=state.get("tentativas", 0),
+        ),
+    }
+
+
 def finalizar(state: EstadoAtendimento) -> dict:
     """Grava no histórico o par pergunta/resposta deste turno.
 
@@ -712,7 +1014,7 @@ def finalizar(state: EstadoAtendimento) -> dict:
 
 
 def rota_apos_triagem(state: EstadoAtendimento) -> str:
-    """Quatro saídas numa função só: barrar, ler a conversa, buscar, ou ir direto.
+    """Cinco saídas: barrar, ler a conversa, bifurcar, buscar, ou ir direto.
 
     É de propósito uma rota, e não duas condicionais em série (uma para o escopo,
     outra para o modo). O que se decide aqui é uma coisa só — por onde esta
@@ -728,6 +1030,8 @@ def rota_apos_triagem(state: EstadoAtendimento) -> str:
         return "fora_de_escopo"
     if state["escopo"] == "conversacional":
         return "conversacional"
+    if state["escopo"] == "composta":
+        return "composta"
     return "sem_busca" if state["modo"] == MODO_SEM_CONTEXTO else "com_busca"
 
 
@@ -813,6 +1117,10 @@ def montar_grafo() -> StateGraph:
     grafo.add_node("triagem", triagem)
     grafo.add_node("resposta_direta", resposta_direta)
     grafo.add_node("responder_do_historico", responder_do_historico)
+    grafo.add_node("bifurcar", bifurcar)
+    grafo.add_node("ramo_do_pedido", ramo_do_pedido)
+    grafo.add_node("ramo_da_regra", ramo_da_regra)
+    grafo.add_node("juntar", juntar)
     grafo.add_node("recuperar", recuperar)
     grafo.add_node("conversar", conversar)
     grafo.add_node("executar_ferramentas", executar_ferramentas)
@@ -828,6 +1136,7 @@ def montar_grafo() -> StateGraph:
         {
             "fora_de_escopo": "resposta_direta",
             "conversacional": "responder_do_historico",
+            "composta": "bifurcar",
             "com_busca": "recuperar",
             "sem_busca": "conversar",
         },
@@ -836,6 +1145,15 @@ def montar_grafo() -> StateGraph:
     # quem grava o turno no histórico.
     grafo.add_edge("resposta_direta", "finalizar")
     grafo.add_edge("responder_do_historico", "finalizar")
+    # O fan-out: duas arestas saindo do mesmo node colocam os dois ramos no mesmo
+    # passo, e o LangGraph os executa em paralelo. A junção espera os dois porque
+    # recebe aresta dos dois — um node só é agendado quando tudo o que entra nele
+    # concluiu. A espera é a topologia; não há contador nem sinalização.
+    grafo.add_edge("bifurcar", "ramo_do_pedido")
+    grafo.add_edge("bifurcar", "ramo_da_regra")
+    grafo.add_edge("ramo_do_pedido", "juntar")
+    grafo.add_edge("ramo_da_regra", "juntar")
+    grafo.add_edge("juntar", "finalizar")
     grafo.add_conditional_edges(
         "recuperar",
         rota_apos_recuperar,
