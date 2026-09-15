@@ -88,3 +88,9 @@ class Atendimento(BaseModel):
     # é o caminho normal — a primeira passada bastou. Também é observação do
     # código, e não do modelo: quem contou as voltas foi o grafo.
     tentativas: int = 0
+    # Os nodes por onde a pergunta passou, na ordem em que concluíram. Também é
+    # observação do código: o caminho é do grafo, e o modelo não o conhece.
+    #
+    # Guarda nome e ordem. Duas respostas iguais que vieram por caminhos
+    # diferentes deixam de ser indistinguíveis de fora.
+    trajetoria: list[str] = []

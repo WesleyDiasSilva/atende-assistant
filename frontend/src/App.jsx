@@ -207,6 +207,9 @@ export default function App() {
           // Quantas vezes o fluxo ampliou a busca antes de responder. Vem do
           // nosso código: quem contou as voltas foi o grafo, não o modelo.
           tentativas: resposta.ok ? dados.tentativas : null,
+          // Os nodes por onde a pergunta passou, na ordem. Duas respostas
+          // parecidas podem ter vindo por caminhos diferentes.
+          trajetoria: resposta.ok ? dados.trajetoria : null,
           temperaturaUsada: temperatura,
         },
       ])
@@ -255,6 +258,7 @@ export default function App() {
           tokensDeEntrada: resposta.ok ? dados.tokens_de_entrada : null,
           fontes: resposta.ok ? dados.fontes : null,
           tentativas: resposta.ok ? dados.tentativas : null,
+          trajetoria: resposta.ok ? dados.trajetoria : null,
           // De onde a execução continuou. Só aparece em turno retomado.
           retomadoDe: resposta.ok ? dados.retomado_de : null,
           temperaturaUsada: temperatura,
@@ -502,6 +506,20 @@ export default function App() {
                             <li key={arquivo}>{arquivo}</li>
                           ))}
                         </ul>
+                      </div>
+                    )}
+                    {/* O caminho que a pergunta percorreu no grafo, na ordem em
+                        que os nodes concluíram. Fora da bolha, como as fontes: é
+                        observação do nosso código sobre a resposta, e não parte
+                        do que o atendente disse. */}
+                    {mensagem.trajetoria?.length > 0 && (
+                      <div className="trajetoria">
+                        <span className="rotulo-recuperados">Caminho no grafo</span>
+                        <ol className="nodes">
+                          {mensagem.trajetoria.map((node, posicao) => (
+                            <li key={`${node}-${posicao}`}>{node}</li>
+                          ))}
+                        </ol>
                       </div>
                     )}
                     {/* Registra a configuração de cada turno: ao trocar um controle

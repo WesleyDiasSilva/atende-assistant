@@ -260,6 +260,10 @@ def _registrar_e_montar(atendimento, pergunta: str, modelo: str) -> dict:
         # Quantas vezes o fluxo ampliou a busca para chegar nesta resposta. Zero
         # no caminho normal; a interface só o mostra quando houve volta.
         "tentativas": atendimento.tentativas,
+        # Os nodes por onde a pergunta passou, na ordem. Duas respostas
+        # parecidas podem ter vindo por caminhos diferentes, e sem este campo a
+        # diferença só apareceria no log do servidor.
+        "trajetoria": atendimento.trajetoria,
     }
 
 

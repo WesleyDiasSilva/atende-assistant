@@ -311,7 +311,25 @@ def responder(
         },
         config=config_da_conversa(conversa_id),
     )
-    return estado_final["atendimento"]
+    return _com_trajetoria(estado_final)
+
+
+def _com_trajetoria(estado_final: dict) -> Atendimento:
+    """Copia o rastro do estado para o objeto que a API devolve.
+
+    O rastro se completa **depois** do node que montou a resposta: `finalizar`
+    ainda vem, e o próprio `finalizar` entra nele. Preencher o campo dentro do
+    node que cria o `Atendimento` o deixaria sempre com o fim faltando — por isso
+    a cópia acontece aqui, onde o estado já é o final.
+
+    O campo vive no `Atendimento` e não no estado do retorno porque quem consome
+    a API recebe um objeto só, e o caminho percorrido é observação do nosso
+    código sobre a resposta, como a contagem de tokens e as fontes.
+    """
+    atendimento = estado_final.get("atendimento")
+    if atendimento is not None:
+        atendimento.trajetoria = estado_final.get("trajetoria", [])
+    return atendimento
 
 
 def pendencia(conversa_id: str) -> tuple[str, ...]:
@@ -350,7 +368,7 @@ def retomar(conversa_id: str) -> tuple[Atendimento | None, str, str]:
     estado_final = grafo_ativo().invoke(None, config=config_da_conversa(conversa_id))
     estado_final = estado_final or {}
     return (
-        estado_final.get("atendimento"),
+        _com_trajetoria(estado_final),
         estado_final.get("pergunta", ""),
         estado_final.get("modelo", ""),
     )

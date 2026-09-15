@@ -230,6 +230,21 @@ estar na base, só não entre os primeiros colocados.
 O ciclo tem teto (uma ampliação) porque ciclo sem teto num grafo é o mesmo
 problema do laço sem teto numa função: ele não termina.
 
+## O caminho percorrido
+
+Cada resposta traz o campo `trajetoria`: os nodes por onde a pergunta passou, na
+ordem em que concluíram. A interface o mostra abaixo da bolha, junto dos trechos
+recuperados. Duas respostas parecidas podem ter vindo por caminhos diferentes —
+uma do histórico, outra da base — e é o caminho que distingue as duas.
+
+O campo tem **mais de um escritor no mesmo turno**: todo node acrescenta o
+próprio nome. Num campo de sobrescrita o último apagaria os anteriores, e sobraria
+um nome só. Por isso ele é declarado com um **reducer**
+(`Annotated[list[str], acumular_trajetoria]`), como o `historico` — a diferença é
+que o rastro recomeça a cada turno, e o histórico não.
+
+O que ele registra é nome de node e ordem. Nada mais.
+
 ## Os cinco controles da interface
 
 Na mesma ordem em que aparecem no painel.

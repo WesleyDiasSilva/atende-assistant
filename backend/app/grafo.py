@@ -100,6 +100,23 @@ MOTIVO_DA_AMPLIACAO_SEM_RESULTADO = (
 )
 
 
+def acumular_trajetoria(atual: list[str] | None, novo: list[str]) -> list[str]:
+    """Soma o que cada node escreve no rastro — e reinicia quando vem lista vazia.
+
+    Um **reducer** é o que permite mais de um escritor no mesmo campo do estado.
+    Sem ele a regra é a da sobrescrita: o último a escrever apaga o que os
+    anteriores escreveram, e o rastro teria sempre um nome só.
+
+    A lista vazia é o pedido de reinício, e ela vem de `ESTADO_DO_TURNO`. Um
+    reducer que só soma nunca esquece — e, com o estado gravado entre turnos, o
+    rastro de ontem apareceria na frente do rastro de agora. Zerar por atribuição
+    não existe num campo com reducer: a atribuição também passa por aqui.
+    """
+    if not novo:
+        return []
+    return (atual or []) + novo
+
+
 class EstadoAtendimento(TypedDict, total=False):
     """O que flui entre os nodes.
 
@@ -127,17 +144,27 @@ class EstadoAtendimento(TypedDict, total=False):
     # os seus controles no estado. Ler a memória e gravar nela são dois pontos
     # diferentes do grafo, e os dois olham para esta chave.
     memoria_ativa: bool
-    # A conversa até aqui, e o **único** campo que acumula.
+    # A conversa até aqui, e o primeiro campo que acumulou.
     #
     # `add_messages` é um reducer: quando um node devolve algo nesta chave, o
-    # LangGraph *soma* ao que já estava lá em vez de substituir. Todos os outros
-    # campos sobrescrevem, e é isso que se quer deles — `fontes` do turno
-    # passado não tem nada a fazer no turno de agora. Aqui é o contrário:
-    # histórico que sobrescreve é histórico de um turno só.
+    # LangGraph *soma* ao que já estava lá em vez de substituir. A maioria dos
+    # campos sobrescreve, e é isso que se quer deles — `fontes` do turno passado
+    # não tem nada a fazer no turno de agora. Aqui é o contrário: histórico que
+    # sobrescreve é histórico de um turno só.
     #
     # Guarda apenas texto: um par pergunta/resposta por turno, gravado pelo node
     # `finalizar`. Ver lá por que só o texto entra.
     historico: Annotated[list, add_messages]
+    # Por onde esta pergunta passou, na ordem em que os nodes concluíram.
+    #
+    # O segundo campo com reducer, e por um motivo diferente do `historico`:
+    # aqui o campo tem **vários escritores dentro do mesmo turno**. Todo node
+    # acrescenta o próprio nome, e num campo de sobrescrita cada um apagaria o
+    # anterior. Ao contrário do histórico, este rastro recomeça a cada turno —
+    # ver `acumular_trajetoria`.
+    #
+    # Guarda nome de node e ordem. Nada além disso.
+    trajetoria: Annotated[list[str], acumular_trajetoria]
     # Intermediários — o que era variável local do fluxo
     escopo: str
     mensagens: list
@@ -174,6 +201,7 @@ class EstadoAtendimento(TypedDict, total=False):
 # deve atravessar os turnos.
 ESTADO_DO_TURNO = {
     "escopo": "",
+    "trajetoria": [],
     "mensagens": [],
     "trechos": [],
     "fontes": [],
@@ -357,7 +385,7 @@ def triagem(state: EstadoAtendimento) -> dict:
         escopo = "atendimento"
 
     logger.info("[triagem] %s pergunta=%r", escopo, state["pergunta"])
-    return {"escopo": escopo}
+    return {"escopo": escopo, "trajetoria": ["triagem"]}
 
 
 def _registrar_memoria(state: EstadoAtendimento) -> None:
@@ -390,6 +418,7 @@ def resposta_direta(state: EstadoAtendimento) -> dict:
     """
     logger.info("[grafo] resposta_direta (sem busca e sem chamada de geracao)")
     return {
+        "trajetoria": ["resposta_direta"],
         "atendimento": Atendimento(
             resposta=RespostaAtendimento(
                 resposta=TEXTO_FORA_DE_ESCOPO,
@@ -420,6 +449,7 @@ def responder_do_historico(state: EstadoAtendimento) -> dict:
     if not historico:
         logger.info("[grafo] responder_do_historico sem conversa gravada")
         return {
+            "trajetoria": ["responder_do_historico"],
             "atendimento": Atendimento(
                 resposta=RespostaAtendimento(
                     resposta=TEXTO_SEM_HISTORICO,
@@ -439,11 +469,17 @@ def responder_do_historico(state: EstadoAtendimento) -> dict:
     try:
         resposta = model.with_structured_output(RespostaAtendimento).invoke(mensagens)
     except ClientError as erro:
-        return _falha_do_bedrock(state, erro)
+        return {
+            "trajetoria": ["responder_do_historico"],
+            **_falha_do_bedrock(state, erro),
+        }
 
     # `fontes` fica vazio porque nenhuma busca aconteceu. Declarar fonte aqui
     # seria declarar como documento o que veio da conversa.
-    return {"atendimento": Atendimento(resposta=resposta)}
+    return {
+        "trajetoria": ["responder_do_historico"],
+        "atendimento": Atendimento(resposta=resposta),
+    }
 
 
 def recuperar(state: EstadoAtendimento) -> dict:
@@ -463,7 +499,10 @@ def recuperar(state: EstadoAtendimento) -> dict:
         trechos = _trechos_do_modo(modo, state["pergunta"], k=top_k)
     except Exception as erro:
         logger.exception("falha ao montar o contexto no modo %s", modo)
-        return {"atendimento": Atendimento(resposta=_falha_da_base(erro))}
+        return {
+            "trajetoria": ["recuperar"],
+            "atendimento": Atendimento(resposta=_falha_da_base(erro)),
+        }
 
     fontes = _fontes(modo, trechos)
     logger.info(
@@ -485,7 +524,7 @@ def recuperar(state: EstadoAtendimento) -> dict:
             "(o historico nao entra na consulta)",
             state["pergunta"],
         )
-    return {"trechos": trechos, "fontes": fontes}
+    return {"trechos": trechos, "fontes": fontes, "trajetoria": ["recuperar"]}
 
 
 def conversar(state: EstadoAtendimento) -> dict:
@@ -508,10 +547,14 @@ def conversar(state: EstadoAtendimento) -> dict:
     try:
         resposta_do_modelo = model.bind_tools(FERRAMENTAS).invoke(mensagens)
     except ClientError as erro:
-        return _falha_do_bedrock(state, erro)
+        return {"trajetoria": ["conversar"], **_falha_do_bedrock(state, erro)}
 
     mensagens.append(resposta_do_modelo)
-    mudou = {"mensagens": mensagens, "passos": passos + 1}
+    mudou = {
+        "mensagens": mensagens,
+        "passos": passos + 1,
+        "trajetoria": ["conversar"],
+    }
     if passos == 0:
         mudou["tokens_de_entrada"] = _tokens_de_entrada(resposta_do_modelo)
     return mudou
@@ -532,7 +575,7 @@ def executar_ferramentas(state: EstadoAtendimento) -> dict:
                 tool_call_id=chamada["id"],
             )
         )
-    return {"mensagens": mensagens}
+    return {"mensagens": mensagens, "trajetoria": ["executar_ferramentas"]}
 
 
 def formalizar(state: EstadoAtendimento) -> dict:
@@ -551,9 +594,10 @@ def formalizar(state: EstadoAtendimento) -> dict:
             state["mensagens"]
         )
     except ClientError as erro:
-        return _falha_do_bedrock(state, erro)
+        return {"trajetoria": ["formalizar"], **_falha_do_bedrock(state, erro)}
 
     return {
+        "trajetoria": ["formalizar"],
         "atendimento": Atendimento(
             resposta=resposta,
             tokens_de_entrada=state.get("tokens_de_entrada", 0),
@@ -590,6 +634,7 @@ def ampliar_busca(state: EstadoAtendimento) -> dict:
         tentativas, TOP_K_AMPLIADO, state["pergunta"],
     )
     return {
+        "trajetoria": ["ampliar_busca"],
         "tentativas": tentativas,
         "top_k": TOP_K_AMPLIADO,
         "mensagens": [],
@@ -620,7 +665,7 @@ def encaminhar(state: EstadoAtendimento) -> dict:
         "[grafo] encaminhar apos %d ampliacao(oes): %s",
         atendimento.tentativas, resposta.motivo,
     )
-    return {"atendimento": atendimento}
+    return {"atendimento": atendimento, "trajetoria": ["encaminhar"]}
 
 
 def finalizar(state: EstadoAtendimento) -> dict:
@@ -646,11 +691,12 @@ def finalizar(state: EstadoAtendimento) -> dict:
     trecho de conversa que o atendente nunca viu.
     """
     if not state.get("memoria_ativa"):
-        return {}
+        return {"trajetoria": ["finalizar"]}
     atendimento = state.get("atendimento")
     if atendimento is None:
-        return {}
+        return {"trajetoria": ["finalizar"]}
     return {
+        "trajetoria": ["finalizar"],
         "historico": [
             HumanMessage(content=state["pergunta"]),
             AIMessage(content=atendimento.resposta.resposta),
