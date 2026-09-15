@@ -10,6 +10,10 @@ backend/dados/*.jsonl
 # Frontend
 node_modules/
 dist/
+# Escrito pelo `npm install` da imagem dentro da pasta montada do host. O
+# Dockerfile copia so o package.json e nao le este arquivo: ele e resultado de
+# rodar o projeto, nao entrada dele.
+frontend/package-lock.json
 
 # Material do instrutor — nao vai para a turma
 .claude/
