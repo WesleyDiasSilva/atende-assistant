@@ -198,12 +198,23 @@ documentação que não pode ficar desatualizada, porque ela é o código.
 Duas coisas que o grafo trouxe e que não existiam antes:
 
 **Triagem na entrada.** Uma chamada curta classifica a mensagem em "assunto da
-loja" ou "fora do escopo". O que está fora recebe uma recusa educada e termina
-ali, sem busca vetorial, sem ciclo de ferramenta e sem chamada de formato: uma
-ida ao modelo em vez de três. A classificação é *fail-open* — na dúvida, segue
-como se estivesse no escopo. Um falso "fora" calaria um cliente legítimo; um
-falso "no escopo" só custa o fluxo normal, que já sabe recusar o que não está na
-base.
+loja", "pergunta sobre esta conversa" ou "fora do escopo". O que está fora recebe
+uma recusa educada e termina ali, sem busca vetorial, sem ciclo de ferramenta e
+sem chamada de formato: uma ida ao modelo em vez de três. A classificação é
+*fail-open* — na dúvida, segue como se estivesse no escopo. Um falso "fora"
+calaria um cliente legítimo; um falso "no escopo" só custa o fluxo normal, que já
+sabe recusar o que não está na base.
+
+**Rota conversacional.** "E o nome do cliente?" não tem o que recuperar na base:
+o que ela pede já foi dito num turno anterior. Essa mensagem vai para um node que
+responde lendo o histórico, sem busca e sem ferramenta — e que, sem conversa
+gravada, devolve um texto fixo sem chamar o modelo.
+
+O desempate está escrito no prompt da triagem, e é ele que protege a consulta:
+entre "atendimento" e "conversacional", vence "atendimento". Repetir *onde está o
+meu pedido 81030?* é pedir o dado outra vez, e o dado pode ter mudado desde a
+resposta anterior — a pergunta volta à fonte em vez de ser respondida do
+histórico.
 
 **Ciclo de auto-correção.** Quando a resposta admite não ter achado a informação
 na base, o fluxo pode **ampliar a busca** — de `TOP_K` para `TOP_K_AMPLIADO`

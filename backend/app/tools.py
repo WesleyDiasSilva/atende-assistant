@@ -16,6 +16,11 @@ def consultar_status_pedido(numero_pedido: str) -> str:
 
     Use sempre que o cliente perguntar onde está o pedido, quando ele chega,
     se já foi entregue ou o que veio nele. O número tem apenas dígitos.
+
+    Consulte de novo a cada pergunta, mesmo que este pedido já tenha sido
+    consultado antes na conversa: situação e prazo mudam com o tempo, e repetir
+    o que foi dito antes é informar ao cliente uma situação que pode já não
+    valer.
     """
     pedido = dados.buscar_pedido(numero_pedido)
 

@@ -23,6 +23,7 @@ trabalho.
 
     START → triagem → rota_apos_triagem (condicional)
               fora_de_escopo → resposta_direta → finalizar
+              conversacional → responder_do_historico → finalizar
               com_busca      → recuperar → conversar
               sem_busca      →             conversar
     conversar → rota_da_ferramenta (condicional)
@@ -188,21 +189,40 @@ ESTADO_DO_TURNO = {
 # só classifica, sem contexto e sem ferramenta. Ela existe para o que não é
 # assunto da loja não chegar a pagar busca vetorial, ciclo de ferramenta e
 # chamada de formato.
-INSTRUCAO_DA_TRIAGEM = """Você é a triagem do atendimento de uma loja de produtos congelados. Classifique a mensagem do cliente em uma de duas categorias:
+INSTRUCAO_DA_TRIAGEM = """Você é a triagem do atendimento de uma loja de produtos congelados. Classifique a mensagem do cliente em uma de três categorias:
 
 - "atendimento": qualquer assunto da loja — pedido, entrega, prazo, rastreamento, troca, devolução, reclamação, pagamento, nota fiscal, cupom, cadastro, assinatura, ou dúvida sobre produto, conservação, validade e preparo.
+- "conversacional": a mensagem pergunta sobre a própria conversa — o que foi dito, perguntado ou respondido nos turnos anteriores. O assunto dela é o diálogo, e não o sistema da loja.
 - "fora_de_escopo": saudação e conversa fiada, e temas alheios à loja (clima, esportes, notícias, piadas, receitas, conhecimento geral, pedido de ajuda com outro assunto).
 
-Na dúvida entre as duas, classifique como "atendimento": o fluxo normal sabe recusar o que não está na base, e barrar um cliente legítimo é o erro mais caro dos dois.
+Dois desempates, nesta ordem:
+
+1. Entre "atendimento" e "conversacional", escolha "atendimento". Repetir uma consulta é pedir o dado outra vez, e o dado pode ter mudado desde a resposta anterior: uma mensagem só é "conversacional" quando pergunta o que foi **dito**, e não o que está **no sistema**.
+2. Entre "atendimento" e "fora_de_escopo", escolha "atendimento": o fluxo normal sabe recusar o que não está na base, e barrar um cliente legítimo é o erro mais caro dos dois.
 
 Exemplos:
 - "onde está o meu pedido 81030?" → atendimento
+- "onde está o meu pedido 81030?", perguntado outra vez depois de já respondido → atendimento
+- "e quanto tempo demora a entrega?" → atendimento
 - "meu salmão chegou descongelado" → atendimento
 - "vocês entregam em Curitiba?" → atendimento
 - "posso congelar de novo depois de descongelar?" → atendimento
+- "e o nome do cliente?" → conversacional
+- "qual foi o número do pedido que eu te passei?" → conversacional
+- "o que eu te perguntei antes?" → conversacional
+- "pode repetir a sua última resposta?" → conversacional
 - "qual a previsão do tempo pra amanhã?" → fora_de_escopo
 - "oi, tudo bem?" → fora_de_escopo
 - "me conta uma piada" → fora_de_escopo"""
+
+# O que separa este node do resto do fluxo: ele responde do que já está na
+# conversa e não vai a fonte nenhuma. A instrução é explícita quanto a isso
+# porque o modelo tem conhecimento próprio sobre lojas em geral e completaria a
+# lacuna com ele — e uma resposta inventada sobre o que "foi dito" é pior do que
+# admitir que a conversa não registra aquilo.
+INSTRUCAO_DA_CONVERSA = """A pergunta do cliente é sobre esta conversa: o que foi dito, perguntado ou respondido nos turnos acima.
+
+Responda usando apenas o que está nas mensagens anteriores. Se a informação não estiver nelas, diga que não tem esse registro e peça ao cliente que informe o dado de novo. Não consulte nem cite a base de conhecimento, e nunca invente número, nome, prazo ou valor que não tenha sido dito aqui."""
 
 # O que o cliente ouve quando a triagem barra a mensagem. É texto fixo, e não
 # uma chamada ao modelo: a recusa é sempre a mesma, então gerá-la seria pagar
@@ -214,9 +234,18 @@ TEXTO_FORA_DE_ESCOPO = (
     "dúvidas sobre os produtos. Sobre algum desses, como posso ajudar?"
 )
 
+# A resposta quando a pergunta é sobre a conversa e conversa não há — primeiro
+# turno da thread, ou memória desligada. Texto fixo pelo mesmo motivo da recusa
+# acima: não há o que o modelo possa acrescentar lendo um histórico vazio, e
+# mandá-lo responder assim mesmo é pagar uma chamada para ouvir uma invenção.
+TEXTO_SEM_HISTORICO = (
+    "Ainda não tenho nada registrado nesta conversa para consultar. Pode me "
+    "dizer de novo o que você precisa?"
+)
+
 
 class _Escopo(BaseModel):
-    """A saída da triagem: um campo só, com duas opções fechadas.
+    """A saída da triagem: um campo só, com três opções fechadas.
 
     Structured output com `Literal` em vez de texto livre porque o valor vai
     alimentar uma rota do grafo. Uma classificação que volta como frase teria de
@@ -224,10 +253,12 @@ class _Escopo(BaseModel):
     é exatamente o que a saída estruturada existe para evitar.
     """
 
-    escopo: Literal["atendimento", "fora_de_escopo"] = Field(
+    escopo: Literal["atendimento", "conversacional", "fora_de_escopo"] = Field(
         description=(
-            "'atendimento' se a mensagem é assunto da loja; 'fora_de_escopo' "
-            "para saudação, conversa fiada e temas alheios à loja."
+            "'atendimento' se a mensagem é assunto da loja; 'conversacional' se "
+            "ela pergunta sobre o que já foi dito nesta conversa; "
+            "'fora_de_escopo' para saudação, conversa fiada e temas alheios à "
+            "loja."
         )
     )
 
@@ -305,11 +336,11 @@ def triagem(state: EstadoAtendimento) -> dict:
     que já sabe recusar o que não está na base. Os dois erros não são
     simétricos, e a escolha do padrão segue o mais barato dos dois.
 
-    ⚠️ A classificação olha **só a mensagem deste turno**. O histórico existe no
-    estado e é lido mais adiante, na montagem da conversa — mas não aqui. Uma
-    frase que só faz sentido dentro da conversa ("e o nome do cliente?") chega à
-    triagem sem a conversa, e é julgada como se fosse a primeira coisa dita: o
-    fluxo lembra, a porta de entrada dele não.
+    ⚠️ A classificação continua olhando **só a mensagem deste turno**: o
+    histórico não entra na chamada. "Conversacional" é decidido pela **forma** da
+    pergunta — ela pede o que foi dito —, e não por conferir se a resposta está
+    mesmo lá. Quem confere isso é o node, que lê o histórico e, não achando,
+    admite não ter o registro.
     """
     _registrar_memoria(state)
     model = montar_modelo(state["modelo"], TEMPERATURA_MINIMA)
@@ -366,6 +397,53 @@ def resposta_direta(state: EstadoAtendimento) -> dict:
             )
         )
     }
+
+
+def responder_do_historico(state: EstadoAtendimento) -> dict:
+    """Responde a partir da conversa anterior, sem tocar em busca nem ferramenta.
+
+    É o caminho que faltava. A pergunta que fala da própria conversa não tem o
+    que recuperar na base — o que ela pede já foi dito — e mandá-la pelo fluxo
+    normal só produz uma busca vetorial cuja consulta ("e o nome do cliente?")
+    não descreve assunto nenhum.
+
+    Sem histórico, devolve o texto fixo e **não chama o modelo**. Com histórico
+    vazio a chamada não teria de onde tirar a resposta: sobraria o conhecimento
+    próprio do modelo, e é exatamente dele que uma pergunta sobre a conversa
+    precisa ficar longe.
+
+    A instrução de restrição entra como mensagem de sistema imediatamente antes
+    da pergunta, e não junto do tom: ela vale para este turno, depois do
+    histórico, e é a última coisa que o modelo lê antes do que o cliente pediu.
+    """
+    historico = state.get("historico") if state.get("memoria_ativa") else None
+    if not historico:
+        logger.info("[grafo] responder_do_historico sem conversa gravada")
+        return {
+            "atendimento": Atendimento(
+                resposta=RespostaAtendimento(
+                    resposta=TEXTO_SEM_HISTORICO,
+                    tipo=TipoDeAtendimento.OUTRO,
+                )
+            ),
+        }
+
+    mensagens = _abrir_conversa(state)
+    mensagens.insert(-1, SystemMessage(content=INSTRUCAO_DA_CONVERSA))
+
+    model = montar_modelo(state["modelo"], state["temperatura"])
+    logger.info(
+        "[grafo] responder_do_historico com %d mensagem(ns) de conversa",
+        len(historico),
+    )
+    try:
+        resposta = model.with_structured_output(RespostaAtendimento).invoke(mensagens)
+    except ClientError as erro:
+        return _falha_do_bedrock(state, erro)
+
+    # `fontes` fica vazio porque nenhuma busca aconteceu. Declarar fonte aqui
+    # seria declarar como documento o que veio da conversa.
+    return {"atendimento": Atendimento(resposta=resposta)}
 
 
 def recuperar(state: EstadoAtendimento) -> dict:
@@ -588,12 +666,12 @@ def finalizar(state: EstadoAtendimento) -> dict:
 
 
 def rota_apos_triagem(state: EstadoAtendimento) -> str:
-    """Três saídas numa função só: barrar, buscar contexto, ou ir direto.
+    """Quatro saídas numa função só: barrar, ler a conversa, buscar, ou ir direto.
 
     É de propósito uma rota, e não duas condicionais em série (uma para o escopo,
     outra para o modo). O que se decide aqui é uma coisa só — por onde esta
-    pergunta entra no fluxo — e ler as três possibilidades lado a lado é o que
-    torna a topologia legível.
+    pergunta entra no fluxo — e ler as possibilidades lado a lado é o que torna a
+    topologia legível.
 
     A segunda metade é a decisão que era o `if modo` dentro de
     `_trechos_do_modo`. O stuffing entra por "com_busca" junto com os dois modos
@@ -602,6 +680,8 @@ def rota_apos_triagem(state: EstadoAtendimento) -> str:
     """
     if state["escopo"] == "fora_de_escopo":
         return "fora_de_escopo"
+    if state["escopo"] == "conversacional":
+        return "conversacional"
     return "sem_busca" if state["modo"] == MODO_SEM_CONTEXTO else "com_busca"
 
 
@@ -686,6 +766,7 @@ def montar_grafo() -> StateGraph:
 
     grafo.add_node("triagem", triagem)
     grafo.add_node("resposta_direta", resposta_direta)
+    grafo.add_node("responder_do_historico", responder_do_historico)
     grafo.add_node("recuperar", recuperar)
     grafo.add_node("conversar", conversar)
     grafo.add_node("executar_ferramentas", executar_ferramentas)
@@ -700,6 +781,7 @@ def montar_grafo() -> StateGraph:
         rota_apos_triagem,
         {
             "fora_de_escopo": "resposta_direta",
+            "conversacional": "responder_do_historico",
             "com_busca": "recuperar",
             "sem_busca": "conversar",
         },
@@ -707,6 +789,7 @@ def montar_grafo() -> StateGraph:
     # Nenhum caminho vai direto para END: todos passam por `finalizar`, que é
     # quem grava o turno no histórico.
     grafo.add_edge("resposta_direta", "finalizar")
+    grafo.add_edge("responder_do_historico", "finalizar")
     grafo.add_conditional_edges(
         "recuperar",
         rota_apos_recuperar,
