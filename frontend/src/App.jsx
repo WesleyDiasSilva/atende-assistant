@@ -210,6 +210,9 @@ export default function App() {
           // Os nodes por onde a pergunta passou, na ordem. Duas respostas
           // parecidas podem ter vindo por caminhos diferentes.
           trajetoria: resposta.ok ? dados.trajetoria : null,
+          // O quanto a resposta se parece com o trecho recuperado mais próximo.
+          // Medido pelo nosso código; nulo fora dos modos de busca.
+          groundedness: resposta.ok ? dados.groundedness : null,
           temperaturaUsada: temperatura,
         },
       ])
@@ -259,6 +262,7 @@ export default function App() {
           fontes: resposta.ok ? dados.fontes : null,
           tentativas: resposta.ok ? dados.tentativas : null,
           trajetoria: resposta.ok ? dados.trajetoria : null,
+          groundedness: resposta.ok ? dados.groundedness : null,
           // De onde a execução continuou. Só aparece em turno retomado.
           retomadoDe: resposta.ok ? dados.retomado_de : null,
           temperaturaUsada: temperatura,
@@ -555,6 +559,16 @@ export default function App() {
                             {mensagem.tentativas === 1
                               ? 'busca ampliada'
                               : 'buscas ampliadas'}
+                          </>
+                        )}
+                        {/* Só nos modos de busca: sem trecho recuperado não há
+                            contra o que medir, e o backend manda nulo. */}
+                        {typeof mensagem.groundedness === 'number' && (
+                          <>
+                            {' · '}groundedness{' '}
+                            <span className="num">
+                              {mensagem.groundedness.toFixed(2)}
+                            </span>
                           </>
                         )}
                         {/* Só em turno retomado: diz de que node a execução
