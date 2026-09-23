@@ -17,6 +17,11 @@ uvicorn[standard]==0.52.1
 langchain-core==1.5.3
 langchain-aws==1.6.4
 
+# LangSmith NAO tem linha propria aqui, e isso e de proposito: o SDK `langsmith`
+# e dependencia do langchain-core e ja vem instalado (0.12.5, conferido por
+# `pip list` dentro da imagem). Ligar o tracing e so preencher as variaveis
+# LANGSMITH_* no .env — nenhum import, nenhum callback.
+
 # Postgres. O extra [binary] traz a libpq compilada no wheel: sem ele a
 # instalacao exige pg_config e cabecalhos de C na maquina.
 psycopg[binary]==3.3.4
