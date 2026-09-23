@@ -79,6 +79,8 @@ Variáveis usadas:
 | `TOP_K` | Quantos trechos a busca devolve por pergunta |
 | `TOP_K_AMPLIADO` | Quantos trechos a busca devolve quando a auto-correção amplia o alcance |
 | `CHUNK_SIZE` / `CHUNK_OVERLAP` | Tamanho do pedaço e a sobreposição, em caracteres |
+| `LANGSMITH_TRACING` / `LANGSMITH_API_KEY` / `LANGSMITH_PROJECT` / `LANGSMITH_ENDPOINT` | Tracing no LangSmith. Opcional; `false` ou sem chave, nada é enviado |
+| `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` / `LANGFUSE_HOST` | Tracing no LangFuse. Opcional; sem as duas chaves, o callback não é criado |
 
 `DB_PORT` é a porta publicada **no host**, com 5434 como padrão: 5432 costuma
 estar ocupada por um Postgres local e 5433 por outro projeto. Se as três
@@ -319,6 +321,31 @@ porque o ciclo custa uma busca e duas idas ao modelo a mais.
 > (`claude-sonnet-5`, `claude-opus-5`, `claude-fable-5`) e no Opus 4.7/4.8 o
 > parâmetro `temperature` foi removido da API e a chamada retorna erro 400. Se
 > trocar por um desses, tire o `temperature` da chain junto.
+
+## Observabilidade
+
+Cada pergunta pode virar uma **trace** — a árvore de tudo o que a execução fez:
+os nodes do grafo, cada ida ao Bedrock com tokens e custo, cada ferramenta.
+Duas plataformas, ligadas lado a lado, e as duas **fail-open**: sem chave, o
+atendimento responde igual e nada sai da máquina.
+
+- **LangSmith é config, não código.** O SDK vem com o `langchain-core`; basta
+  `LANGSMITH_TRACING=true` e `LANGSMITH_API_KEY` no `.env` e recriar o
+  conteiner (`docker compose up -d backend` — o `--reload` relê código, não
+  variável de ambiente).
+- **LangFuse é um callback.** `backend/app/observabilidade.py` cria um
+  `CallbackHandler` (SDK 4.x) por pergunta e o põe em `config["callbacks"]` do
+  `invoke()` do grafo; o config se propaga para todos os nodes. O
+  `langfuse_session_id` é o `thread_id` da conversa: os turnos de uma conversa
+  aparecem juntos em **Sessions**. Modo, modelo e perfil vão como tags.
+- **Groundedness.** O node `avaliar_groundedness` (depois de `formalizar`)
+  embute a resposta e os trechos recuperados com o mesmo Titan da busca e guarda
+  o maior cosseno. Só nos modos de busca — nos outros o valor é `null`. Depois do
+  `invoke()`, o score vai para a trace da própria execução
+  (`create_score(trace_id=handler.last_trace_id, name="groundedness")`) e
+  aparece no rodapé da resposta na interface. Score baixo não é resposta errada:
+  uma resposta que veio da ferramenta de pedido não se parece com a base, e o
+  número diz exatamente isso.
 
 ## Erros comuns
 
