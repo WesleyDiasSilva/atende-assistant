@@ -53,3 +53,26 @@ langgraph==1.2.11
 # langchain-aws (1.6.4) e psycopg (3.3.4) continuam de pe — a resolucao nao
 # subiu nenhum deles.
 langgraph-checkpoint-postgres==3.1.2
+
+# Tracing no LangFuse. Diferente do LangSmith, nao vem de carona com o
+# langchain-core: e um SDK de terceiros, entra pelo callback do LangChain
+# (`langfuse.langchain.CallbackHandler`) e precisa de linha propria.
+#
+# Linha 4.x de proposito: o SDK foi reescrito sobre OpenTelemetry na 3.x, e o
+# import e a forma de passar as chaves mudaram — exemplo da 2.x na internet nao
+# funciona aqui. Verificado com `pip install --dry-run langfuse==4.15.4` dentro
+# da imagem: traz opentelemetry-*, protobuf, backoff e wrapt, sem tocar em
+# langchain-core (1.5.3), langgraph (1.2.11) nem langchain-aws (1.6.4).
+langfuse==4.15.4
+
+# O metapacote `langchain`, que este projeto nunca precisou: o codigo importa de
+# langchain-core. Entra so por causa do LangFuse — o `langfuse.langchain` faz
+# `import langchain` para ler a versao e, sem ele, o CallbackHandler recusa
+# subir ("Please install langchain"). Descoberto no teste: o fail-open segurou
+# o atendimento e o tracing simplesmente nao acontecia, sem erro na resposta.
+#
+# Tem que ser 1.x: e o numero da versao que faz o SDK importar de langchain_core
+# (no 0.x ele procura os modulos antigos). Verificado com `pip install --dry-run
+# langchain==1.3.14` dentro da imagem: instala apenas o proprio langchain, sem
+# tocar em langchain-core (1.5.3) nem langgraph (1.2.11).
+langchain==1.3.14

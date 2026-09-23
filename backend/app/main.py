@@ -40,6 +40,7 @@ from app import (  # noqa: E402  (depois do load_dotenv, de propósito)
     grafo,
     log,
     memoria,
+    observabilidade,
     retrieval,
     retrieval_gerenciado,
 )
@@ -58,6 +59,7 @@ from app.schemas import TipoDeAtendimento  # noqa: E402
 # Liga o log da aplicação: é nele que aparecem a execução de cada ferramenta, as
 # etapas da indexação e o ranking de cada busca.
 log.configurar()
+observabilidade.logar_estado()
 
 
 # A conexão do checkpointer, guardada para ser fechada no encerramento. Fica em

@@ -35,7 +35,7 @@ from langchain_aws import ChatBedrockConverse
 from langchain_core.messages import SystemMessage
 from langchain_core.prompts import ChatPromptTemplate
 
-from app import documentos, retrieval, retrieval_gerenciado
+from app import documentos, observabilidade, retrieval, retrieval_gerenciado
 from app.config import (
     MODELOS,
     MODO_PADRAO,
@@ -298,6 +298,12 @@ def responder(
     """
     from app.grafo import ESTADO_DO_TURNO, grafo_ativo
 
+    # O config ganha o callback do LangFuse (quando configurado) e os metadados
+    # que viram filtro nas duas plataformas de tracing. O `thread_id` continua o
+    # mesmo: a observabilidade pendura em cima da execução, não muda nada nela.
+    config, _ = observabilidade.config_observado(
+        config_da_conversa(conversa_id), modo=modo, modelo=modelo, perfil=perfil
+    )
     estado_final = grafo_ativo().invoke(
         {
             **ESTADO_DO_TURNO,
@@ -309,7 +315,7 @@ def responder(
             "auto_corrigir": auto_corrigir,
             "memoria_ativa": memoria_ativa,
         },
-        config=config_da_conversa(conversa_id),
+        config=config,
     )
     return _com_trajetoria(estado_final)
 
@@ -365,7 +371,12 @@ def retomar(conversa_id: str) -> tuple[Atendimento | None, str, str]:
     """
     from app.grafo import grafo_ativo
 
-    estado_final = grafo_ativo().invoke(None, config=config_da_conversa(conversa_id))
+    # A retomada é outra execução, e vira outra trace — na mesma sessão da
+    # conversa, ao lado da trace que parou no meio.
+    config, _ = observabilidade.config_observado(
+        config_da_conversa(conversa_id), retomada=True
+    )
+    estado_final = grafo_ativo().invoke(None, config=config)
     estado_final = estado_final or {}
     return (
         _com_trajetoria(estado_final),
