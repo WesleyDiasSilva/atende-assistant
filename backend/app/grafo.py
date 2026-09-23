@@ -31,13 +31,14 @@ trabalho.
     conversar → rota_da_ferramenta (condicional)
               ferramenta → executar_ferramentas → conversar   ← ciclo
               formalizar → formalizar
-    formalizar → rota_apos_resposta (condicional)
+    formalizar → avaliar_groundedness → rota_apos_resposta (condicional)
               ampliar    → ampliar_busca → recuperar          ← ciclo
               encaminhar → encaminhar → finalizar
               fim        → finalizar
     finalizar → END
 """
 import logging
+import math
 from typing import Annotated, Literal, TypedDict
 
 from botocore.exceptions import ClientError
@@ -51,7 +52,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from pydantic import BaseModel, Field
 
-from app import falhas
+from app import falhas, retrieval
 
 # As funções de trabalho continuam em `assistente.py`; o que este arquivo faz é
 # ligá-las numa ordem legível. O import é nominal de propósito: a lista abaixo é
@@ -195,6 +196,10 @@ class EstadoAtendimento(TypedDict, total=False):
     passos: int
     top_k: int
     tentativas: int
+    # O quanto a resposta se parece com os trechos recuperados: o cosseno entre
+    # o vetor da resposta e o do trecho mais próximo. `None` quando não houve
+    # trecho recuperado — não é zero, é "não se aplica".
+    groundedness: float | None
     # Saída — o que `responder()` devolve
     #
     # `None` enquanto ninguém produziu resposta ainda, e é isso que as rotas
@@ -234,6 +239,7 @@ ESTADO_DO_TURNO = {
     "passos": 0,
     "top_k": None,
     "tentativas": 0,
+    "groundedness": None,
     "atendimento": None,
 }
 
@@ -713,6 +719,58 @@ def formalizar(state: EstadoAtendimento) -> dict:
     }
 
 
+def _cosseno(a: list[float], b: list[float]) -> float:
+    """Similaridade cosseno entre dois vetores: 1 é mesma direção, 0 é nada a ver."""
+    produto = sum(x * y for x, y in zip(a, b))
+    normas = math.sqrt(sum(x * x for x in a)) * math.sqrt(sum(y * y for y in b))
+    return produto / normas if normas else 0.0
+
+
+def avaliar_groundedness(state: EstadoAtendimento) -> dict:
+    """Mede o quanto a resposta se apoia nos trechos que a busca trouxe.
+
+    Embute a resposta e cada trecho **com o mesmo modelo de embedding da busca**
+    (o Titan do `retrieval.py`) e fica com o maior cosseno: o trecho mais
+    parecido com o que foi dito. Mesmo modelo não é detalhe — vetores de modelos
+    diferentes não vivem no mesmo espaço, e o cosseno entre eles não mede nada.
+
+    É uma **medição**, não uma decisão: o node não muda a resposta nem o
+    caminho. A rota seguinte continua sendo a da auto-correção, que olha o
+    próprio campo do modelo. O número vai para a interface e para o LangFuse,
+    onde vira métrica comparável entre execuções.
+
+    ⚠️ Score baixo não é sinônimo de resposta errada. "Onde está o pedido 81030"
+    no modo RAG responde com o dado da ferramenta, não com a base — e o cosseno
+    contra os trechos da base sai baixo, corretamente: a resposta não veio dali.
+
+    Só roda nos modos de busca. Sem trecho recuperado (sem conhecimento) não há
+    contra o que medir, e no stuffing a base entra inteira: medir contra tudo não
+    diz de onde a resposta saiu. Nos dois casos o valor é `None`. Falha no
+    embedding também vira `None` — a medição não pode derrubar a resposta.
+    """
+    atendimento = state.get("atendimento")
+    trechos = state.get("trechos") or []
+    if (
+        atendimento is None
+        or not trechos
+        or state.get("modo") not in MODOS_COM_BUSCA
+    ):
+        return {"groundedness": None, "trajetoria": ["avaliar_groundedness"]}
+
+    try:
+        embeddings = retrieval.base_vetorial().embeddings
+        vetores = embeddings.embed_documents(
+            [atendimento.resposta.resposta] + [conteudo for _, conteudo in trechos]
+        )
+    except Exception as erro:
+        logger.warning("[groundedness] falha ao calcular: %s", erro)
+        return {"groundedness": None, "trajetoria": ["avaliar_groundedness"]}
+
+    score = round(max(_cosseno(vetores[0], v) for v in vetores[1:]), 4)
+    logger.info("[groundedness] score=%.4f trechos=%d", score, len(trechos))
+    return {"groundedness": score, "trajetoria": ["avaliar_groundedness"]}
+
+
 def ampliar_busca(state: EstadoAtendimento) -> dict:
     """A auto-correção: pede a mesma coisa, olhando mais fundo na base.
 
@@ -1125,6 +1183,7 @@ def montar_grafo() -> StateGraph:
     grafo.add_node("conversar", conversar)
     grafo.add_node("executar_ferramentas", executar_ferramentas)
     grafo.add_node("formalizar", formalizar)
+    grafo.add_node("avaliar_groundedness", avaliar_groundedness)
     grafo.add_node("ampliar_busca", ampliar_busca)
     grafo.add_node("encaminhar", encaminhar)
     grafo.add_node("finalizar", finalizar)
@@ -1174,8 +1233,11 @@ def montar_grafo() -> StateGraph:
     # O ciclo de auto-correção: `ampliar_busca` volta para `recuperar`, e a
     # pergunta passa uma segunda vez pelo mesmo caminho — com a busca mais larga
     # e a conversa recomeçada.
+    # A medição fica entre a resposta e a decisão de ampliar: numa segunda
+    # passada ela roda de novo, e o número que sai é o da resposta final.
+    grafo.add_edge("formalizar", "avaliar_groundedness")
     grafo.add_conditional_edges(
-        "formalizar",
+        "avaliar_groundedness",
         rota_apos_resposta,
         {"ampliar": "ampliar_busca", "encaminhar": "encaminhar", "fim": "finalizar"},
     )

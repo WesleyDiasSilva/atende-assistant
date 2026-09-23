@@ -301,7 +301,7 @@ def responder(
     # O config ganha o callback do LangFuse (quando configurado) e os metadados
     # que viram filtro nas duas plataformas de tracing. O `thread_id` continua o
     # mesmo: a observabilidade pendura em cima da execução, não muda nada nela.
-    config, _ = observabilidade.config_observado(
+    config, handler = observabilidade.config_observado(
         config_da_conversa(conversa_id), modo=modo, modelo=modelo, perfil=perfil
     )
     estado_final = grafo_ativo().invoke(
@@ -317,7 +317,13 @@ def responder(
         },
         config=config,
     )
-    return _com_trajetoria(estado_final)
+    atendimento = _com_trajetoria(estado_final)
+    # O score vai para a trace **desta** execução, e por isso sai depois do
+    # invoke: é só aí que o handler conhece o id da trace que gravou.
+    observabilidade.enviar_score(
+        handler, "groundedness", estado_final.get("groundedness")
+    )
+    return atendimento
 
 
 def _com_trajetoria(estado_final: dict) -> Atendimento:
@@ -335,6 +341,9 @@ def _com_trajetoria(estado_final: dict) -> Atendimento:
     atendimento = estado_final.get("atendimento")
     if atendimento is not None:
         atendimento.trajetoria = estado_final.get("trajetoria", [])
+        # Mesmo motivo do rastro: a medição roda depois do node que montou o
+        # `Atendimento`, então o valor só está completo no estado final.
+        atendimento.groundedness = estado_final.get("groundedness")
     return atendimento
 
 
@@ -373,11 +382,14 @@ def retomar(conversa_id: str) -> tuple[Atendimento | None, str, str]:
 
     # A retomada é outra execução, e vira outra trace — na mesma sessão da
     # conversa, ao lado da trace que parou no meio.
-    config, _ = observabilidade.config_observado(
+    config, handler = observabilidade.config_observado(
         config_da_conversa(conversa_id), retomada=True
     )
     estado_final = grafo_ativo().invoke(None, config=config)
     estado_final = estado_final or {}
+    observabilidade.enviar_score(
+        handler, "groundedness", estado_final.get("groundedness")
+    )
     return (
         _com_trajetoria(estado_final),
         estado_final.get("pergunta", ""),

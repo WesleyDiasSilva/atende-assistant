@@ -266,6 +266,9 @@ def _registrar_e_montar(atendimento, pergunta: str, modelo: str) -> dict:
         # parecidas podem ter vindo por caminhos diferentes, e sem este campo a
         # diferença só apareceria no log do servidor.
         "trajetoria": atendimento.trajetoria,
+        # O quanto a resposta se parece com o trecho recuperado mais próximo.
+        # `None` fora dos modos de busca; a interface só o mostra quando existe.
+        "groundedness": atendimento.groundedness,
     }
 
 

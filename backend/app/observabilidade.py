@@ -92,6 +92,31 @@ def config_observado(config: dict, **metadados) -> tuple[dict, object | None]:
     return {**novo, "callbacks": [handler]}, handler
 
 
+def enviar_score(handler, nome: str, valor: float | None) -> None:
+    """Pendura uma nota na trace que o handler acabou de gravar.
+
+    Chamado **depois** do `invoke()`, e o momento importa: o id da trace é o
+    LangFuse quem gera, e ele só existe no handler (`last_trace_id`) depois que a
+    execução começou. Gerar um id do nosso lado e tentar casar depois é o
+    caminho de a nota ir parar na trace errada.
+
+    O handler é o da própria pergunta (ver `handler_langfuse`), então o
+    `last_trace_id` é desta execução e de nenhuma outra. Sem handler, sem valor
+    ou sem trace, não faz nada; e erro no envio vira aviso, não exceção.
+    """
+    if handler is None or valor is None:
+        return
+    trace_id = getattr(handler, "last_trace_id", None)
+    if not trace_id:
+        return
+    try:
+        from langfuse import get_client
+
+        get_client().create_score(trace_id=trace_id, name=nome, value=valor)
+    except Exception as erro:
+        logger.warning("[observabilidade] score %s não foi enviado: %s", nome, erro)
+
+
 def logar_estado() -> None:
     """Uma linha no boot dizendo o que está ligado. Nunca imprime chave."""
     langsmith = os.getenv("LANGSMITH_TRACING") or os.getenv("LANGCHAIN_TRACING_V2")

@@ -94,3 +94,8 @@ class Atendimento(BaseModel):
     # Guarda nome e ordem. Duas respostas iguais que vieram por caminhos
     # diferentes deixam de ser indistinguíveis de fora.
     trajetoria: list[str] = []
+    # O quanto a resposta se parece com o trecho recuperado mais próximo, de 0 a
+    # 1. Observação do código, como os tokens: quem mediu foi o node
+    # `avaliar_groundedness`, com o mesmo embedding da busca. `None` quando não
+    # houve busca — não há contra o que medir.
+    groundedness: float | None = None
