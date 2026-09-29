@@ -75,7 +75,8 @@
       "pergunta": "como faço para cancelar meu pedido?",
       "criterios": {
         "escopo": "atendimento",
-        "recusa": true
+        "recusa": true,
+        "juiz": "A resposta enuncia alguma regra, prazo, taxa ou condição de cancelamento que não esteja no contexto?"
       }
     },
     {
@@ -221,6 +222,16 @@
       }
     },
     {
+      "id": "composta-dias-restantes",
+      "descricao": "O pedido 80412 foi entregue há 2 dias e o prazo de troca é 7. As duas partes trazem esses dois números; nenhuma diz quantos dias restam. A instrução da junção proíbe acrescentar informação.",
+      "pergunta": "o pedido 80412 já foi entregue e quantos dias ainda tenho para pedir a troca?",
+      "criterios": {
+        "escopo": "composta",
+        "ramos": true,
+        "juiz": "A resposta afirma algum número — de dias, de prazo ou de valor — que não aparece escrito em nenhuma das duas partes, inclusive um número obtido por conta, como uma subtração?"
+      }
+    },
+    {
       "id": "conversa-recupera-pedido",
       "descricao": "O número do pedido só existe no que foi dito antes na conversa. A pergunta é sobre o diálogo: não vai à base nem à ferramenta.",
       "historico": [
@@ -247,7 +258,8 @@
         "ferramenta": null,
         "contem": [
           "81104"
-        ]
+        ],
+        "juiz": "A resposta afirma algum número de pedido, prazo ou situação que não tenha sido dito na conversa?"
       }
     },
     {

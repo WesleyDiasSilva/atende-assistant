@@ -30,11 +30,16 @@ from pathlib import Path
 from langchain_core.messages import AIMessage, HumanMessage
 
 from app.grafo import ESTADO_DO_TURNO, compilar_grafo
-from avaliacao import regua
+from avaliacao import juiz, regua
 from avaliacao.isolamento import fila_isolada
 from avaliacao.sondas import SondaDaExecucao
 
 CASOS_PATH = Path(__file__).resolve().parent / "casos.json"
+
+# Critérios que alguém sabe medir: os determinísticos da régua e o do juiz. Um
+# critério declarado num caso e ausente daqui aparece como não avaliado, para
+# não passar por aprovado no silêncio.
+RECONHECIDOS = set(regua.CRITERIOS) | {juiz.CRITERIO}
 
 # Largura da coluna do nome do caso, para o veredito ficar alinhado.
 COLUNA = 44
@@ -111,7 +116,11 @@ def avaliar_caso(grafo, caso: dict):
     except Exception as erro:
         return [regua.Veredito("execucao", False, f"{type(erro).__name__}: {erro}")], [], None
     vereditos = regua.avaliar(estado, sonda, criterios)
-    nao_avaliados = [nome for nome in criterios if nome not in regua.CRITERIOS]
+    # O juiz roda depois da régua, mas não recebe o resultado dela: saber que os
+    # critérios em código passaram o inclinaria a concordar com eles.
+    if juiz.CRITERIO in criterios:
+        vereditos.append(juiz.avaliar(caso, estado, criterios[juiz.CRITERIO]))
+    nao_avaliados = [nome for nome in criterios if nome not in RECONHECIDOS]
     return vereditos, nao_avaliados, estado
 
 
