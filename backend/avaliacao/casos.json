@@ -1,0 +1,23 @@
+{
+  "casos": [
+    {
+      "id": "regra-prazo-troca",
+      "descricao": "A política de troca e devolução define o prazo em 7 dias corridos após a entrega.",
+      "pergunta": "qual o prazo para trocar um produto?"
+    },
+    {
+      "id": "recusa-cancelamento-fora-da-base",
+      "descricao": "Nenhum documento da base trata de cancelamento de pedido: a resposta certa é admitir que não sabe e encaminhar.",
+      "pergunta": "como faço para cancelar meu pedido?"
+    },
+    {
+      "id": "conversa-recupera-pedido",
+      "descricao": "O número do pedido só existe no que foi dito antes na conversa.",
+      "historico": [
+        {"papel": "cliente", "texto": "meu pedido é o 81104, ele já saiu?"},
+        {"papel": "atendente", "texto": "O pedido 81104 está em separação, com previsão de entrega em 4 dias."}
+      ],
+      "pergunta": "qual era mesmo o número do meu pedido?"
+    }
+  ]
+}
