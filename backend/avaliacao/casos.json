@@ -2,22 +2,166 @@
   "casos": [
     {
       "id": "regra-prazo-troca",
-      "descricao": "A política de troca e devolução define o prazo em 7 dias corridos após a entrega.",
-      "pergunta": "qual o prazo para trocar um produto?"
+      "descricao": "A política de troca e devolução define o prazo em 7 dias corridos após a entrega. Pergunta sobre regra: vai à base, não a ferramenta.",
+      "pergunta": "qual o prazo para trocar um produto?",
+      "criterios": {
+        "escopo": "atendimento",
+        "rota": ["triagem", "recuperar", "conversar", "formalizar", "finalizar"],
+        "fontes": ["politica-troca-devolucao.md"],
+        "recusa": false,
+        "ferramenta": null
+      }
+    },
+    {
+      "id": "regra-frete-gratis-pix",
+      "descricao": "O mínimo para frete grátis no Pix está na política de frete.",
+      "pergunta": "a partir de quanto o frete sai grátis pagando no pix?",
+      "criterios": {
+        "escopo": "atendimento",
+        "fontes": ["politica-frete.md"],
+        "recusa": false
+      }
+    },
+    {
+      "id": "regra-parcelamento",
+      "descricao": "O parcelamento sem juros está em formas de pagamento.",
+      "pergunta": "em quantas vezes sem juros dá para parcelar?",
+      "criterios": {
+        "escopo": "atendimento",
+        "fontes": ["formas-pagamento.md"],
+        "recusa": false
+      }
     },
     {
       "id": "recusa-cancelamento-fora-da-base",
       "descricao": "Nenhum documento da base trata de cancelamento de pedido: a resposta certa é admitir que não sabe e encaminhar.",
-      "pergunta": "como faço para cancelar meu pedido?"
+      "pergunta": "como faço para cancelar meu pedido?",
+      "criterios": {
+        "escopo": "atendimento",
+        "recusa": true
+      }
+    },
+    {
+      "id": "recusa-com-ampliacao",
+      "descricao": "Com a auto-correção ligada, a recusa amplia a busca uma vez e, sem resultado, encaminha. O teto de uma ampliação é regra do fluxo.",
+      "pergunta": "como faço para cancelar meu pedido?",
+      "entradas": {"auto_corrigir": true},
+      "criterios": {
+        "rota": ["recuperar", "formalizar", "ampliar_busca", "recuperar", "formalizar", "encaminhar", "finalizar"],
+        "tentativas": 1,
+        "recusa": true
+      }
+    },
+    {
+      "id": "fora-de-escopo-tema-alheio",
+      "descricao": "Tema alheio à loja: a triagem barra e o sistema responde com o texto fixo, sem busca e sem modelo.",
+      "pergunta": "quem ganhou o jogo de ontem?",
+      "criterios": {
+        "escopo": "fora_de_escopo",
+        "rota": ["triagem", "resposta_direta", "finalizar"],
+        "texto_fixo": "fora_de_escopo"
+      }
+    },
+    {
+      "id": "preparo-e-assunto-da-loja",
+      "descricao": "A instrução da triagem lista preparo de produto como assunto da loja, com essa palavra.",
+      "pergunta": "como preparo a picanha?",
+      "criterios": {
+        "escopo": "atendimento",
+        "nao_passa_por": ["resposta_direta"]
+      }
+    },
+    {
+      "id": "ferramenta-status-em-separacao",
+      "descricao": "Situação de pedido é dado do sistema: a resposta tem de vir da ferramenta, com o número que o cliente deu.",
+      "pergunta": "meu pedido 81104 já saiu?",
+      "criterios": {
+        "escopo": "atendimento",
+        "rota": ["conversar", "executar_ferramentas", "conversar", "formalizar"],
+        "ferramenta": {"nome": "consultar_status_pedido", "argumentos": {"numero_pedido": "81104"}}
+      }
+    },
+    {
+      "id": "troca-fora-do-prazo",
+      "descricao": "O pedido 80998 foi entregue há 21 dias e o prazo de troca é 7. O pedido de troca vai à ferramenta, e a regra em código recusa.",
+      "pergunta": "quero trocar o pedido 80998, a picanha veio estranha",
+      "criterios": {
+        "ferramenta": {"nome": "abrir_solicitacao_de_troca", "argumentos": {"numero_pedido": "80998"}}
+      }
+    },
+    {
+      "id": "troca-pedido-cancelado",
+      "descricao": "O pedido 80877 foi cancelado: não há o que trocar. O motivo vai na mensagem porque, sem ele, a resposta certa é perguntar o motivo antes de abrir qualquer coisa.",
+      "pergunta": "quero devolver o pedido 80877, o bacon veio estragado",
+      "criterios": {
+        "ferramenta": {"nome": "abrir_solicitacao_de_troca", "argumentos": {"numero_pedido": "80877"}}
+      }
+    },
+    {
+      "id": "troca-abre-protocolo",
+      "descricao": "O pedido 80412 foi entregue há 2 dias, dentro do prazo: a troca é aberta.",
+      "pergunta": "quero trocar o pedido 80412, o hambúrguer chegou descongelado",
+      "criterios": {
+        "ferramenta": {"nome": "abrir_solicitacao_de_troca", "argumentos": {"numero_pedido": "80412"}}
+      }
+    },
+    {
+      "id": "composta-status-e-prazo",
+      "descricao": "Duas perguntas de naturezas diferentes: o dado do pedido vem da ferramenta, a regra vem da base, em dois ramos paralelos.",
+      "pergunta": "o pedido 80998 já foi entregue e qual o prazo para pedir troca?",
+      "criterios": {
+        "escopo": "composta",
+        "rota": ["triagem", "bifurcar", "juntar", "finalizar"],
+        "ramos": true,
+        "bifurcacao": "80998",
+        "ferramenta": {"nome": "consultar_status_pedido", "argumentos": {"numero_pedido": "80998"}},
+        "fontes": ["politica-troca-devolucao.md"]
+      }
     },
     {
       "id": "conversa-recupera-pedido",
-      "descricao": "O número do pedido só existe no que foi dito antes na conversa.",
+      "descricao": "O número do pedido só existe no que foi dito antes na conversa. A pergunta é sobre o diálogo: não vai à base nem à ferramenta.",
       "historico": [
         {"papel": "cliente", "texto": "meu pedido é o 81104, ele já saiu?"},
         {"papel": "atendente", "texto": "O pedido 81104 está em separação, com previsão de entrega em 4 dias."}
       ],
-      "pergunta": "qual era mesmo o número do meu pedido?"
+      "pergunta": "qual era mesmo o número do meu pedido?",
+      "criterios": {
+        "escopo": "conversacional",
+        "rota": ["triagem", "responder_do_historico", "finalizar"],
+        "nao_passa_por": ["recuperar"],
+        "ferramenta": null
+      }
+    },
+    {
+      "id": "conversa-sem-memoria",
+      "descricao": "A mesma pergunta com a memória desligada: sem conversa para ler, o sistema responde com o texto fixo e não chama o modelo.",
+      "historico": [
+        {"papel": "cliente", "texto": "meu pedido é o 81104, ele já saiu?"},
+        {"papel": "atendente", "texto": "O pedido 81104 está em separação, com previsão de entrega em 4 dias."}
+      ],
+      "pergunta": "qual era mesmo o número do meu pedido?",
+      "entradas": {"memoria_ativa": false},
+      "criterios": {
+        "escopo": "conversacional",
+        "texto_fixo": "sem_historico"
+      }
+    },
+    {
+      "id": "seguimento-minuscula",
+      "descricao": "Pergunta curta sobre o pedido. O primeiro desempate da triagem manda escolher atendimento entre atendimento e conversacional.",
+      "pergunta": "e o pedido?",
+      "criterios": {
+        "escopo": "atendimento"
+      }
+    },
+    {
+      "id": "seguimento-maiuscula",
+      "descricao": "A mesma pergunta do caso anterior, só com a primeira letra maiúscula. O desempate é o mesmo.",
+      "pergunta": "E o pedido?",
+      "criterios": {
+        "escopo": "atendimento"
+      }
     }
   ]
 }

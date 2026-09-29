@@ -2,8 +2,9 @@
 """Runner da suíte de avaliação.
 
 Carrega os casos de `avaliacao/casos.json`, invoca o grafo uma vez por caso e
-mostra o que cada execução produziu. Não há framework de teste envolvido: um
-caso é um dicionário de dados e a suíte é um laço sobre eles.
+confronta o que a execução produziu com o gabarito declarado no caso. Não há
+framework de teste envolvido: um caso é um dicionário de dados e a suíte é um
+laço sobre eles.
 
 Execução, dentro do conteiner, onde as dependências estão instaladas:
 
@@ -32,8 +33,13 @@ from langchain_core.messages import AIMessage, HumanMessage
 
 from app import dados
 from app.grafo import ESTADO_DO_TURNO, compilar_grafo
+from avaliacao import regua
+from avaliacao.sondas import SondaDaExecucao
 
 CASOS_PATH = Path(__file__).resolve().parent / "casos.json"
+
+# Largura da coluna do nome do caso, para o veredito ficar alinhado.
+COLUNA = 44
 
 # Os controles da interface, com os valores que a suíte usa quando o caso não
 # diz outra coisa. Perfil objetivo porque resposta curta é mais fácil de ler e
@@ -106,10 +112,56 @@ def fila_isolada():
             dados.ARQUIVO_DE_SOLICITACOES = original
 
 
-def executar(grafo, caso: dict, config: dict | None = None) -> dict:
-    """Invoca o grafo para um caso e devolve o estado final completo."""
+def executar(grafo, caso: dict, sonda: SondaDaExecucao) -> dict:
+    """Invoca o grafo para um caso e devolve o estado final completo.
+
+    A sonda entra pelo config, a mesma porta do tracing: ela observa, e o
+    fluxo não sabe que está sendo observado.
+    """
     with fila_isolada():
-        return grafo.invoke(estado_inicial(caso), config=config or {})
+        return grafo.invoke(estado_inicial(caso), config={"callbacks": [sonda]})
+
+
+def avaliar_caso(grafo, caso: dict):
+    """Executa um caso e aplica os critérios. Devolve (vereditos, não avaliados, estado).
+
+    Erro na invocação vira veredito reprovado: uma exceção não pode passar por
+    caso aprovado, nem derrubar a suíte inteira.
+    """
+    criterios = caso.get("criterios", {})
+    sonda = SondaDaExecucao()
+    try:
+        estado = executar(grafo, caso, sonda)
+    except Exception as erro:
+        return [regua.Veredito("execucao", False, f"{type(erro).__name__}: {erro}")], [], None
+    vereditos = regua.avaliar(estado, sonda, criterios)
+    nao_avaliados = [nome for nome in criterios if nome not in regua.CRITERIOS]
+    return vereditos, nao_avaliados, estado
+
+
+def passou_caso(vereditos: list[regua.Veredito]) -> bool:
+    """Um caso passa quando todo critério efetivamente medido foi aprovado."""
+    return all(v.ok for v in vereditos if v.avaliado)
+
+
+# --- Saída -------------------------------------------------------------------
+
+
+def _cabecalho(nome: str, veredito: str) -> str:
+    """Nome do caso com preenchimento pontilhado até a coluna do veredito."""
+    return f"{nome} {'.' * max(3, COLUNA - len(nome))} {veredito}"
+
+
+def imprimir_caso(caso: dict, vereditos, nao_avaliados, estado) -> None:
+    print()
+    print(_cabecalho(caso["id"], "passou" if passou_caso(vereditos) else "FALHOU"))
+    for v in vereditos:
+        marca = "·" if not v.avaliado else ("✓" if v.ok else "✗")
+        print(f"  {marca} {v.criterio:<14}{v.detalhe}")
+    for nome in nao_avaliados:
+        print(f"  · {nome:<14}(nenhum critério com esse nome — não avaliado)")
+    if estado is not None:
+        print(f"  · {'caminho':<14}{' → '.join(estado.get('trajetoria') or [])}")
 
 
 # --- Entrada -----------------------------------------------------------------
@@ -132,15 +184,19 @@ def main(argv=None) -> int:
 
     grafo = compilar_grafo()
     print(f"Suíte de avaliação — {len(casos)} casos")
+    resultados: dict[str, bool] = {}
     for caso in casos:
-        estado = executar(grafo, caso)
-        atendimento = estado.get("atendimento")
-        print()
-        print(caso["id"])
-        print(f"  caminho   {' → '.join(estado.get('trajetoria') or [])}")
-        if atendimento is not None:
-            print(f"  resposta  {atendimento.resposta.resposta}")
-    return 0
+        vereditos, nao_avaliados, estado = avaliar_caso(grafo, caso)
+        imprimir_caso(caso, vereditos, nao_avaliados, estado)
+        resultados[caso["id"]] = passou_caso(vereditos)
+
+    reprovados = [cid for cid, ok in resultados.items() if not ok]
+    print()
+    print("─" * (COLUNA + 12))
+    print(f"{len(casos) - len(reprovados)}/{len(casos)} casos passaram")
+    if reprovados:
+        print(f"reprovados: {', '.join(reprovados)}")
+    return 1 if reprovados else 0
 
 
 if __name__ == "__main__":
