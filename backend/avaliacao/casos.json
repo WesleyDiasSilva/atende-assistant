@@ -86,7 +86,8 @@
       "descricao": "O pedido 80998 foi entregue há 21 dias e o prazo de troca é 7. O pedido de troca vai à ferramenta, e a regra em código recusa.",
       "pergunta": "quero trocar o pedido 80998, a picanha veio estranha",
       "criterios": {
-        "ferramenta": {"nome": "abrir_solicitacao_de_troca", "argumentos": {"numero_pedido": "80998"}}
+        "ferramenta": {"nome": "abrir_solicitacao_de_troca", "argumentos": {"numero_pedido": "80998"}},
+        "regra": "80998"
       }
     },
     {
@@ -94,7 +95,8 @@
       "descricao": "O pedido 80877 foi cancelado: não há o que trocar. O motivo vai na mensagem porque, sem ele, a resposta certa é perguntar o motivo antes de abrir qualquer coisa.",
       "pergunta": "quero devolver o pedido 80877, o bacon veio estragado",
       "criterios": {
-        "ferramenta": {"nome": "abrir_solicitacao_de_troca", "argumentos": {"numero_pedido": "80877"}}
+        "ferramenta": {"nome": "abrir_solicitacao_de_troca", "argumentos": {"numero_pedido": "80877"}},
+        "regra": "80877"
       }
     },
     {

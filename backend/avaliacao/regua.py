@@ -26,7 +26,9 @@ from __future__ import annotations
 
 from typing import Any, NamedTuple
 
+from app import dados, regras
 from app.grafo import TEXTO_FORA_DE_ESCOPO, TEXTO_SEM_HISTORICO
+from avaliacao.isolamento import fila_isolada
 
 
 class Veredito(NamedTuple):
@@ -213,6 +215,29 @@ def bifurcacao(estado: dict, sonda, esperado: str) -> Veredito:
     return Veredito("bifurcacao", False, "; ".join(problemas))
 
 
+def regra(estado: dict, sonda, esperado: str) -> Veredito:
+    """A regra de troca barrou o pedido, e a recusa chegou ao modelo.
+
+    A regra é código (`regras.impedimento_para_troca`), e não instrução ao
+    modelo — então o critério compara com a saída da **própria função**, e não
+    com uma frase escrita à mão no caso. Se a regra mudar, o gabarito muda junto;
+    o que o critério afirma é que o fluxo a acionou e devolveu o que ela disse.
+
+    A regra é calculada com a fila vazia, como a execução a encontrou.
+    """
+    pedido = dados.buscar_pedido(esperado)
+    if pedido is None:
+        return Veredito("regra", False, f"pedido {esperado} não existe na fixture")
+    with fila_isolada():
+        impedimento = regras.impedimento_para_troca(pedido)
+    if impedimento is None:
+        return Veredito("regra", False, f"o pedido {esperado} não tem impedimento — o caso não exercita a regra")
+    saidas = " ".join(f["saida"] or "" for f in sonda.ferramentas)
+    if impedimento in saidas:
+        return Veredito("regra", True, impedimento)
+    return Veredito("regra", False, f"a regra não chegou ao fluxo para o pedido {esperado}")
+
+
 def _formatar(argumentos: dict) -> str:
     return ", ".join(f"{k}={v!r}" for k, v in argumentos.items())
 
@@ -230,6 +255,7 @@ CRITERIOS = {
     "tentativas": tentativas,
     "ramos": ramos,
     "bifurcacao": bifurcacao,
+    "regra": regra,
 }
 
 

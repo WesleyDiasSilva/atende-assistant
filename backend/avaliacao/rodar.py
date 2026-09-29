@@ -25,15 +25,13 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-import tempfile
-from contextlib import contextmanager
 from pathlib import Path
 
 from langchain_core.messages import AIMessage, HumanMessage
 
-from app import dados
 from app.grafo import ESTADO_DO_TURNO, compilar_grafo
 from avaliacao import regua
+from avaliacao.isolamento import fila_isolada
 from avaliacao.sondas import SondaDaExecucao
 
 CASOS_PATH = Path(__file__).resolve().parent / "casos.json"
@@ -88,28 +86,6 @@ def estado_inicial(caso: dict) -> dict:
 
 
 # --- Execução ----------------------------------------------------------------
-
-
-@contextmanager
-def fila_isolada():
-    """Aponta a fila de solicitações para um arquivo temporário durante o caso.
-
-    Uma das ferramentas grava: abrir troca deixa um registro na fila, e a regra
-    de negócio recusa a segunda troca do mesmo pedido. Sem isolamento, a rodada
-    seguinte encontraria a troca que a rodada anterior abriu e responderia
-    outra coisa — um vermelho que não vem do sistema, vem da suíte. Cada caso
-    começa com a fila vazia e ela é descartada no fim.
-
-    Funciona porque o caminho do arquivo é lido no momento da chamada, e não
-    capturado no import.
-    """
-    original = dados.ARQUIVO_DE_SOLICITACOES
-    with tempfile.TemporaryDirectory() as pasta:
-        dados.ARQUIVO_DE_SOLICITACOES = Path(pasta) / "solicitacoes.jsonl"
-        try:
-            yield
-        finally:
-            dados.ARQUIVO_DE_SOLICITACOES = original
 
 
 def executar(grafo, caso: dict, sonda: SondaDaExecucao) -> dict:
