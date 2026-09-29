@@ -6,10 +6,21 @@
       "pergunta": "qual o prazo para trocar um produto?",
       "criterios": {
         "escopo": "atendimento",
-        "rota": ["triagem", "recuperar", "conversar", "formalizar", "finalizar"],
-        "fontes": ["politica-troca-devolucao.md"],
+        "rota": [
+          "triagem",
+          "recuperar",
+          "conversar",
+          "formalizar",
+          "finalizar"
+        ],
+        "fontes": [
+          "politica-troca-devolucao.md"
+        ],
         "recusa": false,
-        "ferramenta": null
+        "ferramenta": null,
+        "contem": [
+          "7 dias"
+        ]
       }
     },
     {
@@ -18,8 +29,13 @@
       "pergunta": "a partir de quanto o frete sai grátis pagando no pix?",
       "criterios": {
         "escopo": "atendimento",
-        "fontes": ["politica-frete.md"],
-        "recusa": false
+        "fontes": [
+          "politica-frete.md"
+        ],
+        "recusa": false,
+        "contem": [
+          "299"
+        ]
       }
     },
     {
@@ -28,8 +44,29 @@
       "pergunta": "em quantas vezes sem juros dá para parcelar?",
       "criterios": {
         "escopo": "atendimento",
-        "fontes": ["formas-pagamento.md"],
-        "recusa": false
+        "fontes": [
+          "formas-pagamento.md"
+        ],
+        "recusa": false,
+        "contem": [
+          "6 vezes"
+        ]
+      }
+    },
+    {
+      "id": "sem-base-prazo-troca",
+      "descricao": "A mesma pergunta do prazo de troca, sem nenhum documento no contexto. O gabarito continua sendo o da política: 7 dias corridos.",
+      "pergunta": "qual o prazo para trocar um produto?",
+      "entradas": {
+        "modo": "sem_conhecimento"
+      },
+      "criterios": {
+        "nao_passa_por": [
+          "recuperar"
+        ],
+        "contem": [
+          "7 dias"
+        ]
       }
     },
     {
@@ -45,9 +82,19 @@
       "id": "recusa-com-ampliacao",
       "descricao": "Com a auto-correção ligada, a recusa amplia a busca uma vez e, sem resultado, encaminha. O teto de uma ampliação é regra do fluxo.",
       "pergunta": "como faço para cancelar meu pedido?",
-      "entradas": {"auto_corrigir": true},
+      "entradas": {
+        "auto_corrigir": true
+      },
       "criterios": {
-        "rota": ["recuperar", "formalizar", "ampliar_busca", "recuperar", "formalizar", "encaminhar", "finalizar"],
+        "rota": [
+          "recuperar",
+          "formalizar",
+          "ampliar_busca",
+          "recuperar",
+          "formalizar",
+          "encaminhar",
+          "finalizar"
+        ],
         "tentativas": 1,
         "recusa": true
       }
@@ -58,7 +105,11 @@
       "pergunta": "quem ganhou o jogo de ontem?",
       "criterios": {
         "escopo": "fora_de_escopo",
-        "rota": ["triagem", "resposta_direta", "finalizar"],
+        "rota": [
+          "triagem",
+          "resposta_direta",
+          "finalizar"
+        ],
         "texto_fixo": "fora_de_escopo"
       }
     },
@@ -68,7 +119,9 @@
       "pergunta": "como preparo a picanha?",
       "criterios": {
         "escopo": "atendimento",
-        "nao_passa_por": ["resposta_direta"]
+        "nao_passa_por": [
+          "resposta_direta"
+        ]
       }
     },
     {
@@ -77,8 +130,22 @@
       "pergunta": "meu pedido 81104 já saiu?",
       "criterios": {
         "escopo": "atendimento",
-        "rota": ["conversar", "executar_ferramentas", "conversar", "formalizar"],
-        "ferramenta": {"nome": "consultar_status_pedido", "argumentos": {"numero_pedido": "81104"}}
+        "rota": [
+          "conversar",
+          "executar_ferramentas",
+          "conversar",
+          "formalizar"
+        ],
+        "ferramenta": {
+          "nome": "consultar_status_pedido",
+          "argumentos": {
+            "numero_pedido": "81104"
+          }
+        },
+        "contem": [
+          "separa"
+        ],
+        "tipo": "status_pedido"
       }
     },
     {
@@ -86,7 +153,12 @@
       "descricao": "O pedido 80998 foi entregue há 21 dias e o prazo de troca é 7. O pedido de troca vai à ferramenta, e a regra em código recusa.",
       "pergunta": "quero trocar o pedido 80998, a picanha veio estranha",
       "criterios": {
-        "ferramenta": {"nome": "abrir_solicitacao_de_troca", "argumentos": {"numero_pedido": "80998"}},
+        "ferramenta": {
+          "nome": "abrir_solicitacao_de_troca",
+          "argumentos": {
+            "numero_pedido": "80998"
+          }
+        },
         "regra": "80998"
       }
     },
@@ -95,7 +167,12 @@
       "descricao": "O pedido 80877 foi cancelado: não há o que trocar. O motivo vai na mensagem porque, sem ele, a resposta certa é perguntar o motivo antes de abrir qualquer coisa.",
       "pergunta": "quero devolver o pedido 80877, o bacon veio estragado",
       "criterios": {
-        "ferramenta": {"nome": "abrir_solicitacao_de_troca", "argumentos": {"numero_pedido": "80877"}},
+        "ferramenta": {
+          "nome": "abrir_solicitacao_de_troca",
+          "argumentos": {
+            "numero_pedido": "80877"
+          }
+        },
         "regra": "80877"
       }
     },
@@ -104,7 +181,15 @@
       "descricao": "O pedido 80412 foi entregue há 2 dias, dentro do prazo: a troca é aberta.",
       "pergunta": "quero trocar o pedido 80412, o hambúrguer chegou descongelado",
       "criterios": {
-        "ferramenta": {"nome": "abrir_solicitacao_de_troca", "argumentos": {"numero_pedido": "80412"}}
+        "ferramenta": {
+          "nome": "abrir_solicitacao_de_troca",
+          "argumentos": {
+            "numero_pedido": "80412"
+          }
+        },
+        "contem": [
+          "SOL-"
+        ]
       }
     },
     {
@@ -113,37 +198,75 @@
       "pergunta": "o pedido 80998 já foi entregue e qual o prazo para pedir troca?",
       "criterios": {
         "escopo": "composta",
-        "rota": ["triagem", "bifurcar", "juntar", "finalizar"],
+        "rota": [
+          "triagem",
+          "bifurcar",
+          "juntar",
+          "finalizar"
+        ],
         "ramos": true,
         "bifurcacao": "80998",
-        "ferramenta": {"nome": "consultar_status_pedido", "argumentos": {"numero_pedido": "80998"}},
-        "fontes": ["politica-troca-devolucao.md"]
+        "ferramenta": {
+          "nome": "consultar_status_pedido",
+          "argumentos": {
+            "numero_pedido": "80998"
+          }
+        },
+        "fontes": [
+          "politica-troca-devolucao.md"
+        ],
+        "contem": [
+          "7 dias"
+        ]
       }
     },
     {
       "id": "conversa-recupera-pedido",
       "descricao": "O número do pedido só existe no que foi dito antes na conversa. A pergunta é sobre o diálogo: não vai à base nem à ferramenta.",
       "historico": [
-        {"papel": "cliente", "texto": "meu pedido é o 81104, ele já saiu?"},
-        {"papel": "atendente", "texto": "O pedido 81104 está em separação, com previsão de entrega em 4 dias."}
+        {
+          "papel": "cliente",
+          "texto": "meu pedido é o 81104, ele já saiu?"
+        },
+        {
+          "papel": "atendente",
+          "texto": "O pedido 81104 está em separação, com previsão de entrega em 4 dias."
+        }
       ],
       "pergunta": "qual era mesmo o número do meu pedido?",
       "criterios": {
         "escopo": "conversacional",
-        "rota": ["triagem", "responder_do_historico", "finalizar"],
-        "nao_passa_por": ["recuperar"],
-        "ferramenta": null
+        "rota": [
+          "triagem",
+          "responder_do_historico",
+          "finalizar"
+        ],
+        "nao_passa_por": [
+          "recuperar"
+        ],
+        "ferramenta": null,
+        "contem": [
+          "81104"
+        ]
       }
     },
     {
       "id": "conversa-sem-memoria",
       "descricao": "A mesma pergunta com a memória desligada: sem conversa para ler, o sistema responde com o texto fixo e não chama o modelo.",
       "historico": [
-        {"papel": "cliente", "texto": "meu pedido é o 81104, ele já saiu?"},
-        {"papel": "atendente", "texto": "O pedido 81104 está em separação, com previsão de entrega em 4 dias."}
+        {
+          "papel": "cliente",
+          "texto": "meu pedido é o 81104, ele já saiu?"
+        },
+        {
+          "papel": "atendente",
+          "texto": "O pedido 81104 está em separação, com previsão de entrega em 4 dias."
+        }
       ],
       "pergunta": "qual era mesmo o número do meu pedido?",
-      "entradas": {"memoria_ativa": false},
+      "entradas": {
+        "memoria_ativa": false
+      },
       "criterios": {
         "escopo": "conversacional",
         "texto_fixo": "sem_historico"

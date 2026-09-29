@@ -171,6 +171,43 @@ def ferramenta(estado: dict, sonda, esperado: dict | None) -> Veredito:
     return Veredito("ferramenta", False, f"esperado {nome}({_formatar(argumentos)}); executou {observadas}")
 
 
+def contem(estado: dict, sonda, esperado: list[str]) -> Veredito:
+    """O texto da resposta contém o que uma resposta correta precisa afirmar.
+
+    Existe porque os outros critérios medem o **caminho** — a rota, o documento
+    recuperado, a ferramenta — e não o **conteúdo**. Sem este, uma resposta que
+    recuperou a política certa e afirmou o prazo errado passaria em todos eles:
+    documento certo é indício de resposta certa, não prova.
+
+    Os trechos esperados vêm do gabarito — o que o documento ou a ferramenta de
+    fato dizem —, nunca da resposta observada. Sem diferenciar maiúsculas: a caixa
+    do texto não é o que se afirma.
+    """
+    resposta = _resposta(estado)
+    texto = resposta.resposta.lower() if resposta is not None else ""
+    faltando = [trecho for trecho in esperado if trecho.lower() not in texto]
+    if not faltando:
+        return Veredito("contem", True, ", ".join(esperado))
+    return Veredito("contem", False, f"não afirma {', '.join(faltando)}")
+
+
+def tipo(estado: dict, sonda, esperado: str) -> Veredito:
+    """O assunto que a resposta declarou é o esperado.
+
+    Só é critério porque o campo é um conjunto **fechado** no schema
+    (`TipoDeAtendimento`): o modelo escolhe um valor da lista e não tem como
+    devolver uma variação dele. Se fosse texto livre com sugestões na
+    descrição, um acento ou um espaço reprovaria o caso sem o sistema ter
+    piorado — e um critério que falha sozinho ensina o time a ignorar o
+    vermelho de todos os outros.
+    """
+    resposta = _resposta(estado)
+    observado = resposta.tipo.value if resposta is not None else None
+    if observado == esperado:
+        return Veredito("tipo", True, observado)
+    return Veredito("tipo", False, f"esperado {esperado}; observado {observado}")
+
+
 def tentativas(estado: dict, sonda, esperado: int) -> Veredito:
     """O ciclo de ampliação da busca rodou o número esperado de vezes."""
     observado = estado.get("tentativas", 0)
@@ -249,6 +286,8 @@ CRITERIOS = {
     "nao_passa_por": nao_passa_por,
     "escopo": escopo,
     "fontes": fontes_incluem,
+    "contem": contem,
+    "tipo": tipo,
     "recusa": recusa,
     "texto_fixo": texto_fixo,
     "ferramenta": ferramenta,
