@@ -37,7 +37,7 @@ from pathlib import Path
 from langchain_core.messages import AIMessage, HumanMessage
 
 from app.grafo import ESTADO_DO_TURNO, compilar_grafo
-from avaliacao import juiz, regua
+from avaliacao import juiz, plataforma, regua
 from avaliacao.isolamento import fila_isolada
 from avaliacao.sondas import SondaDaExecucao
 
@@ -184,14 +184,17 @@ def imprimir_delta(delta: dict | None) -> None:
 # --- Execução ----------------------------------------------------------------
 
 
-def executar(grafo, caso: dict, sonda: SondaDaExecucao) -> dict:
-    """Invoca o grafo para um caso e devolve o estado final completo.
+def executar(grafo, caso: dict, sonda: SondaDaExecucao) -> tuple[dict, str | None]:
+    """Invoca o grafo para um caso. Devolve o estado final e o id da trace.
 
     A sonda entra pelo config, a mesma porta do tracing: ela observa, e o
-    fluxo não sabe que está sendo observado.
+    fluxo não sabe que está sendo observado. O id da trace é lido logo depois
+    do `invoke()`, quando o handler o conhece; sem LangFuse, é `None`.
     """
+    config, handler = plataforma.config_do_caso(caso["id"], [sonda])
     with fila_isolada():
-        return grafo.invoke(estado_inicial(caso), config={"callbacks": [sonda]})
+        estado = grafo.invoke(estado_inicial(caso), config=config)
+    return estado, getattr(handler, "last_trace_id", None)
 
 
 def avaliar_caso(grafo, caso: dict, execucoes: dict | None = None):
@@ -209,21 +212,23 @@ def avaliar_caso(grafo, caso: dict, execucoes: dict | None = None):
     criterios = caso.get("criterios", {})
     execucoes = execucoes if execucoes is not None else {}
     origem = caso.get("mesma_execucao_de")
-    if origem and origem in execucoes:
-        estado, sonda = execucoes[origem]
+    reaproveitado = bool(origem and origem in execucoes)
+    if reaproveitado:
+        estado, sonda, trace_id = execucoes[origem]
     else:
         sonda = SondaDaExecucao()
         try:
-            estado = executar(grafo, caso, sonda)
+            estado, trace_id = executar(grafo, caso, sonda)
         except Exception as erro:
             return [regua.Veredito("execucao", False, f"{type(erro).__name__}: {erro}")], [], None
-    execucoes[caso["id"]] = (estado, sonda)
+    execucoes[caso["id"]] = (estado, sonda, trace_id)
     vereditos = regua.avaliar(estado, sonda, criterios)
     # O juiz roda depois da régua, mas não recebe o resultado dela: saber que os
     # critérios em código passaram o inclinaria a concordar com eles.
     if juiz.CRITERIO in criterios:
         vereditos.append(juiz.avaliar(caso, estado, criterios[juiz.CRITERIO]))
     nao_avaliados = [nome for nome in criterios if nome not in RECONHECIDOS]
+    plataforma.enviar_scores(trace_id, caso["id"], vereditos, reaproveitado)
     return vereditos, nao_avaliados, estado
 
 
@@ -325,6 +330,8 @@ def main(argv=None) -> int:
     escopo = "conjunto rápido" if args.rapido else f"{len(casos)} casos"
     sufixo = f" × {args.repeticoes} repetições" if args.repeticoes > 1 else ""
     print(f"Suíte de avaliação — {escopo}{sufixo}")
+    if plataforma.disponivel():
+        print(f"LangFuse: traces e scores na sessão {plataforma.RODADA_ID}")
     resultados: dict[str, bool] = {}
     if args.repeticoes > 1:
         for caso in casos:
@@ -358,6 +365,14 @@ def main(argv=None) -> int:
     imprimir_delta(calcular_delta(anterior, resultados))
     if args.repeticoes == 1:
         gravar_ultima(anterior, resultados)
+
+    # Falha de envio é reportada e não muda o código de saída: a plataforma é
+    # destino do resultado, não parte do critério.
+    falhas_plataforma = plataforma.finalizar()
+    if falhas_plataforma:
+        print(f"LangFuse: {len(falhas_plataforma)} falha(s) de envio")
+        for f in falhas_plataforma[:5]:
+            print(f"  {f}")
     return 1 if reprovados else 0
 
 
