@@ -30,3 +30,6 @@ aula.md
 # Copias de seguranca feitas a mao antes de mexer nos dados de execucao.
 *.bak
 *.bak-*
+
+# Resultado da ultima rodada da suite de avaliacao: base local do delta.
+backend/avaliacao/.ultima-rodada.json

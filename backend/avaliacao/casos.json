@@ -3,6 +3,7 @@
     {
       "id": "regra-prazo-troca",
       "descricao": "A política de troca e devolução define o prazo em 7 dias corridos após a entrega. Pergunta sobre regra: vai à base, não a ferramenta.",
+      "rapido": true,
       "pergunta": "qual o prazo para trocar um produto?",
       "criterios": {
         "escopo": "atendimento",
@@ -72,6 +73,7 @@
     {
       "id": "recusa-cancelamento-fora-da-base",
       "descricao": "Nenhum documento da base trata de cancelamento de pedido: a resposta certa é admitir que não sabe e encaminhar.",
+      "rapido": true,
       "pergunta": "como faço para cancelar meu pedido?",
       "criterios": {
         "escopo": "atendimento",
@@ -103,6 +105,7 @@
     {
       "id": "fora-de-escopo-tema-alheio",
       "descricao": "Tema alheio à loja: a triagem barra e o sistema responde com o texto fixo, sem busca e sem modelo.",
+      "rapido": true,
       "pergunta": "quem ganhou o jogo de ontem?",
       "criterios": {
         "escopo": "fora_de_escopo",
@@ -128,6 +131,7 @@
     {
       "id": "ferramenta-status-em-separacao",
       "descricao": "Situação de pedido é dado do sistema: a resposta tem de vir da ferramenta, com o número que o cliente deu.",
+      "rapido": true,
       "pergunta": "meu pedido 81104 já saiu?",
       "criterios": {
         "escopo": "atendimento",
@@ -224,6 +228,7 @@
     {
       "id": "composta-dias-restantes",
       "descricao": "O pedido 80412 foi entregue há 2 dias e o prazo de troca é 7. As duas partes trazem esses dois números; nenhuma diz quantos dias restam. A instrução da junção proíbe acrescentar informação.",
+      "rapido": true,
       "pergunta": "o pedido 80412 já foi entregue e quantos dias ainda tenho para pedir a troca?",
       "criterios": {
         "escopo": "composta",
