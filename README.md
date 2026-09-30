@@ -32,6 +32,17 @@ backend/
     dados.py        persistência em arquivo
     config.py       catálogo de modelos, perfis, modos e temperatura
     log.py          configuração de log da API e dos scripts
+  avaliacao/
+    casos.json      os casos: pergunta, contexto, critérios e o estado
+                    esperado da base — dado, não código
+    rodar.py        o runner: executa o grafo por caso, aplica os critérios,
+                    compara com a rodada anterior e sai com código de porta
+    regua.py        critérios determinísticos (caminho, escopo, ferramenta...)
+    juiz.py         critério julgado por modelo, veredito binário com motivo
+    sondas.py       callback que observa ferramentas e falhas da execução
+    isolamento.py   fila de solicitações temporária durante cada caso
+    plataforma.py   vereditos como scores na trace do LangFuse
+    relatorio.py    relatório HTML da rodada, reescrito a cada caso
   scripts/
     indexar_base.py indexa dados/base/ na base vetorial
     limpar_base.py  apaga os vetores, preservando os .md
@@ -346,6 +357,88 @@ atendimento responde igual e nada sai da máquina.
   aparece no rodapé da resposta na interface. Score baixo não é resposta errada:
   uma resposta que veio da ferramenta de pedido não se parece com a base, e o
   número diz exatamente isso.
+
+## Avaliação
+
+Uma suíte que responde "passou ou não passou" para um conjunto fixo de perguntas,
+a cada mudança. Vive em `backend/avaliacao/`, fora de `app/`: ela importa o
+grafo, invoca e observa — não acrescenta uma linha ao fluxo que mede.
+
+```bash
+docker compose exec backend python -m avaliacao.rodar             # todos os casos
+docker compose exec backend python -m avaliacao.rodar --rapido    # o conjunto curto
+docker compose exec backend python -m avaliacao.rodar --caso regra-prazo-troca
+docker compose exec backend python -m avaliacao.rodar --caso regra-prazo-troca --repeticoes 5
+```
+
+Sempre `python -m avaliacao.rodar`, de dentro do conteiner: `python
+avaliacao/rodar.py` não encontra o pacote `app`.
+
+**Casos são dado.** Cada caso em `casos.json` tem pergunta, histórico quando
+precisa de conversa anterior, entradas (modo, auto-correção, memória) e
+critérios. A `descricao` registra *por que* aquela é a expectativa.
+
+**Duas camadas de critério.** Tudo o que tem gabarito é medido em código
+(`regua.py`), sem chamada a modelo:
+
+| Critério | De onde vem o valor |
+|---|---|
+| `rota` | a trajetória que cada node escreve, comparada como **subsequência** |
+| `nao_passa_por` | a mesma trajetória: nodes que não podem aparecer |
+| `escopo` | a classificação da triagem (`Literal` fechado) |
+| `fontes` | o documento esperado está entre os **recuperados** pela busca |
+| `recusa` | `precisa_de_humano` com trecho recuperado — falha da base não conta |
+| `texto_fixo` | os textos que o sistema escreve sem modelo |
+| `ferramenta` | nome e argumentos executados, lidos pelo callback |
+| `regra` | a saída de `regras.impedimento_para_troca` chegou ao fluxo |
+| `tentativas` | o contador do ciclo de ampliação |
+| `ramos` | as duas respostas parciais da pergunta composta |
+| `bifurcacao` | o número do pedido fica fora da metade da regra |
+| `contem` | o texto afirma o que o gabarito diz |
+| `tipo` | o assunto declarado (`Enum` fechado) |
+
+O que não tem gabarito vai para o **juiz** (`juiz.py`): um modelo declarado no
+próprio módulo, temperatura zero, que recebe pergunta, contexto e resposta — e
+não o resultado da régua. O critério é uma pergunta fechada que descreve um
+defeito; a saída é `aprovado` ou `reprovado` com o motivo.
+
+O `groundedness` aparece em cada caso e **nunca decide**: é um cosseno, cego à
+negação, e dá nota baixa à recusa correta.
+
+**Vermelho esperado.** Um caso com `esperado_vermelho` documenta um defeito
+conhecido (`motivo_do_vermelho`). Reprovar é o esperado; passar é que é notícia.
+
+**Delta.** Cada rodada compara o resultado por caso com a anterior, gravada em
+`avaliacao/.ultima-rodada.json` (fora do git), e imprime `antes → agora` e quem
+regrediu. Só entram na comparação casos medidos nas duas rodadas. Um vermelho
+esperado que passou (ou voltou a reprovar) não é recuperação nem regressão: sai
+numa linha própria, `vermelho esperado mudou`.
+
+**Código de saída.** `0` quando tudo está como os casos declaram; `1` quando há
+notícia (um verde que reprovou, ou um vermelho esperado que passou); `2` quando
+parte da rodada não pôde ser medida, ou quando a base não está no estado
+esperado.
+
+**O que a suíte isola.** A fila de solicitações vira um arquivo temporário por
+caso — abrir troca grava, e a segunda troca do mesmo pedido é recusada pela
+regra. Uma chamada ao modelo que falhou durante o caso (limite de requisições,
+credencial) é refeita; persistindo, o caso sai como **não avaliado
+(infraestrutura)**, fora do placar e do delta. `AVALIACAO_PAUSA` controla a
+pausa entre casos (padrão 2 s): o Bedrock limita requisições por minuto, e uma rodada é uma rajada.
+
+**Pré-condição da base.** `base_esperada` em `casos.json` declara os documentos
+e o total de chunks. Base diferente interrompe a rodada com a divergência; para
+medir assim mesmo, `--ignorar-base`. Documento apagado pelo painel sai também do
+disco: volta com `git checkout -- backend/dados/base/<arquivo>` (ou reenviado
+pelo painel) e `python -m scripts.indexar_base`. `TOP_K` pode ser trocado só para a rodada:
+`docker compose exec -e TOP_K=1 backend python -m avaliacao.rodar`.
+
+**Relatório.** A rodada é escrita em `backend/avaliacao/relatorio/rodada.html` a
+cada caso; aberto no navegador, ele se atualiza sozinho enquanto a rodada corre.
+
+**Plataforma.** Com o LangFuse configurado, cada caso vira uma trace com o id do
+caso como nome, a rodada como sessão, e os vereditos como scores `regua` e `juiz`
+(o motivo vai no comentário).
 
 ## Erros comuns
 
