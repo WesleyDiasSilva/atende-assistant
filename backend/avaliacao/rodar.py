@@ -18,7 +18,7 @@ cada caso (ver `relatorio.py`): abrir o arquivo no navegador é acompanhar a
 rodada caso a caso.
 
 Ao fim de cada rodada o runner compara o resultado com o da rodada anterior e
-imprime o delta, no formato "12/14 → 9/14, 3 regressões". A base de comparação
+imprime o delta, no formato "15/19 → 14/19, 2 regressões". A base de comparação
 fica em `avaliacao/.ultima-rodada.json`, fora do git.
 
 O grafo é compilado **sem checkpointer**. A suíte não conversa com a API nem
