@@ -13,6 +13,10 @@ Execução, dentro do conteiner, onde as dependências estão instaladas:
     docker compose exec backend python -m avaliacao.rodar --caso regra-prazo-troca
     docker compose exec backend python -m avaliacao.rodar --caso regra-prazo-troca --repeticoes 5
 
+A rodada também sai em HTML, em `avaliacao/relatorio/rodada.html`, reescrito a
+cada caso (ver `relatorio.py`): abrir o arquivo no navegador é acompanhar a
+rodada caso a caso.
+
 Ao fim de cada rodada o runner compara o resultado com o da rodada anterior e
 imprime o delta, no formato "12/14 → 9/14, 3 regressões". A base de comparação
 fica em `avaliacao/.ultima-rodada.json`, fora do git.
@@ -41,6 +45,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 from app.grafo import ESTADO_DO_TURNO, compilar_grafo
 from avaliacao import juiz, plataforma, regua
 from avaliacao.isolamento import fila_isolada
+from avaliacao.relatorio import ARQUIVO as RELATORIO, RelatorioAoVivo
 from avaliacao.sondas import SondaDaExecucao, falha_de_infraestrutura
 
 CASOS_PATH = Path(__file__).resolve().parent / "casos.json"
@@ -66,6 +71,15 @@ NOVAS_TENTATIVAS = (10, 25)
 
 # Largura da coluna do nome do caso, para o veredito ficar alinhado.
 COLUNA = 44
+
+# Cor no terminal só quando a saída é um terminal de verdade: redirecionada para
+# arquivo ou lida por uma integração contínua, código de cor vira lixo no texto.
+COR = sys.stdout.isatty() and not os.getenv("NO_COLOR")
+CORES = {"verde": "32", "vermelho": "31", "cinza": "90", "magenta": "35", "negrito": "1"}
+
+
+def pintar(texto: str, cor: str) -> str:
+    return f"\033[{CORES[cor]}m{texto}\033[0m" if COR else texto
 
 # Os controles da interface, com os valores que a suíte usa quando o caso não
 # diz outra coisa. Perfil objetivo porque resposta curta é mais fácil de ler e
@@ -324,23 +338,39 @@ def rotular(caso: dict, passou: bool) -> tuple[str, bool]:
 # --- Saída -------------------------------------------------------------------
 
 
-def _cabecalho(nome: str, veredito: str) -> str:
+def _cabecalho(nome: str, veredito: str, cor: str = "negrito") -> str:
     """Nome do caso com preenchimento pontilhado até a coluna do veredito."""
-    return f"{nome} {'.' * max(3, COLUNA - len(nome))} {veredito}"
+    return f"{nome} {pintar('.' * max(3, COLUNA - len(nome)), 'cinza')} {pintar(veredito, cor)}"
+
+
+def _marca(v: regua.Veredito) -> str:
+    if not v.avaliado:
+        return pintar("·", "cinza")
+    return pintar("✓", "verde") if v.ok else pintar("✗", "vermelho")
+
+
+def situacao_do_caso(caso: dict, passou: bool) -> str:
+    """A situação do caso no relatório: passou, falhou, esperado ou surpresa."""
+    if caso.get("esperado_vermelho"):
+        return "surpresa" if passou else "esperado"
+    return "passou" if passou else "falhou"
+
+
+COR_DA_SITUACAO = {"passou": "verde", "falhou": "vermelho", "esperado": "cinza", "surpresa": "vermelho"}
 
 
 def imprimir_caso(resultado: dict) -> None:
     caso, estado = resultado["caso"], resultado["estado"]
     print()
     if resultado["infraestrutura"]:
-        print(_cabecalho(caso["id"], "não avaliado (infraestrutura)"))
+        print(_cabecalho(caso["id"], "não avaliado (infraestrutura)", "cinza"))
         print(f"  · {'motivo':<14}{resultado['infraestrutura'][:160]}")
         return
-    rotulo, _ = rotular(caso, passou_caso(resultado["vereditos"]))
-    print(_cabecalho(caso["id"], rotulo))
+    passou = passou_caso(resultado["vereditos"])
+    rotulo, _ = rotular(caso, passou)
+    print(_cabecalho(caso["id"], rotulo, COR_DA_SITUACAO[situacao_do_caso(caso, passou)]))
     for v in resultado["vereditos"]:
-        marca = "·" if not v.avaliado else ("✓" if v.ok else "✗")
-        print(f"  {marca} {v.criterio:<14}{v.detalhe}")
+        print(f"  {_marca(v)} {v.criterio:<14}{v.detalhe}")
     for nome in resultado["nao_avaliados"]:
         print(f"  · {nome:<14}(nenhum critério com esse nome — não avaliado)")
     if estado is not None:
@@ -362,7 +392,8 @@ def imprimir_repeticoes(caso: dict, rodadas: list[list[regua.Veredito]], nao_ava
     passaram = sum(1 for vereditos in rodadas if passou_caso(vereditos))
     marca_esperado = " (vermelho esperado)" if caso.get("esperado_vermelho") else ""
     print()
-    print(_cabecalho(caso["id"], f"{passaram}/{total} passaram{marca_esperado}"))
+    cor = "verde" if passaram == total else ("cinza" if caso.get("esperado_vermelho") else "vermelho")
+    print(_cabecalho(caso["id"], f"{passaram}/{total} passaram{marca_esperado}", cor))
     if sem_medida:
         print(f"  · {'infra':<14}{sem_medida} rodada(s) sem medida, fora da conta")
     por_criterio: dict[str, list[regua.Veredito]] = {}
@@ -450,11 +481,15 @@ def main(argv=None) -> int:
     print(f"Suíte de avaliação — {escopo}{sufixo}")
     if plataforma.disponivel():
         print(f"LangFuse: traces e scores na sessão {plataforma.RODADA_ID}")
+    relatorio = RelatorioAoVivo(casos, f"{escopo}{sufixo}")
+    print(f"relatório ao vivo: backend/avaliacao/{RELATORIO.parent.name}/{RELATORIO.name}")
     resultados: dict[str, bool] = {}
     sem_medida: list[str] = []
     if args.repeticoes > 1:
         for caso in casos:
             rodadas, nao_avaliados, infra = [], [], 0
+            relatorio.rodando(caso["id"])
+            ultimo = None
             for _ in range(args.repeticoes):
                 # Cada repetição executa de novo, inclusive o caso que
                 # reaproveitaria outro: o que se mede aqui é a variação.
@@ -464,22 +499,35 @@ def main(argv=None) -> int:
                 else:
                     rodadas.append(r["vereditos"])
                     nao_avaliados = r["nao_avaliados"]
+                    ultimo = r
                 time.sleep(PAUSA_ENTRE_CASOS)
             imprimir_repeticoes(caso, rodadas, nao_avaliados, infra)
             if rodadas:
-                resultados[caso["id"]] = all(passou_caso(r) for r in rodadas)
+                todas = all(passou_caso(r) for r in rodadas)
+                resultados[caso["id"]] = todas
+                passaram = sum(1 for r in rodadas if passou_caso(r))
+                relatorio.registrar(
+                    caso["id"], situacao_do_caso(caso, todas), ultimo["vereditos"], ultimo["estado"],
+                    rotulo=f"{passaram}/{len(rodadas)} passaram",
+                )
             else:
                 sem_medida.append(caso["id"])
+                relatorio.registrar(caso["id"], "infra", infraestrutura="nenhuma rodada pôde ser medida")
     else:
         execucoes: dict = {}
         for caso in casos:
+            relatorio.rodando(caso["id"])
             r = avaliar_caso(grafo, caso, execucoes)
             imprimir_caso(r)
             if r["infraestrutura"]:
                 sem_medida.append(caso["id"])
+                relatorio.registrar(caso["id"], "infra", estado=r["estado"], infraestrutura=r["infraestrutura"])
             else:
-                resultados[caso["id"]] = passou_caso(r["vereditos"])
-            time.sleep(PAUSA_ENTRE_CASOS)
+                passou = passou_caso(r["vereditos"])
+                resultados[caso["id"]] = passou
+                relatorio.registrar(caso["id"], situacao_do_caso(caso, passou), r["vereditos"], r["estado"])
+                if caso.get("mesma_execucao_de") is None:
+                    time.sleep(PAUSA_ENTRE_CASOS)
 
     por_id = {c["id"]: c for c in casos}
     reprovados = [cid for cid, ok in resultados.items() if not ok]
@@ -508,9 +556,14 @@ def main(argv=None) -> int:
     # estrito (todas têm de passar), e misturar os dois tornaria o delta
     # incomparável.
     anterior = carregar_ultima()
-    imprimir_delta(calcular_delta(anterior, resultados))
+    delta = calcular_delta(anterior, resultados)
+    imprimir_delta(delta)
     if args.repeticoes == 1:
         gravar_ultima(anterior, resultados)
+    aviso = None
+    if divergencias:
+        aviso = "Base fora do estado esperado: " + "; ".join(divergencias)
+    relatorio.concluir(delta if args.repeticoes == 1 else None, aviso)
 
     # Falha de envio é reportada e não muda o código de saída: a plataforma é
     # destino do resultado, não parte do critério.

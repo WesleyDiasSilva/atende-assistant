@@ -33,3 +33,6 @@ aula.md
 
 # Resultado da ultima rodada da suite de avaliacao: base local do delta.
 backend/avaliacao/.ultima-rodada.json
+
+# Relatorio HTML da ultima rodada da suite, gerado a cada execucao.
+backend/avaliacao/relatorio/
