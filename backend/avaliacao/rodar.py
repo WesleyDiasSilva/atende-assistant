@@ -198,22 +198,31 @@ def gravar_ultima(anterior: dict[str, bool], atual: dict[str, bool]) -> None:
     )
 
 
-def calcular_delta(anterior: dict[str, bool], atual: dict[str, bool]) -> dict | None:
+def calcular_delta(
+    anterior: dict[str, bool], atual: dict[str, bool], vermelhos_esperados: set[str] = frozenset()
+) -> dict | None:
     """O placar antes e agora, e quem regrediu ou recuperou.
 
     A comparação cobre só os casos com resultado antes **e** agora: comparar
     contagens de conjuntos diferentes de casos daria um número que parece medir
     regressão e não mede. `None` quando não há nada comparável.
+
+    O vermelho esperado fica fora das duas listas. Ele passar não é recuperação —
+    é o defeito documentado que deixou de aparecer, e isso pede outra leitura
+    (o sistema foi consertado, ou o caso deixou de exercitar o que dizia?). Ele
+    voltar a reprovar também não é regressão. As duas mudanças saem à parte.
     """
     comparaveis = [cid for cid in atual if cid in anterior]
     if not comparaveis:
         return None
+    mudou = [cid for cid in comparaveis if anterior[cid] != atual[cid]]
     return {
         "total": len(comparaveis),
         "antes": sum(1 for cid in comparaveis if anterior[cid]),
         "agora": sum(1 for cid in comparaveis if atual[cid]),
-        "regressoes": [cid for cid in comparaveis if anterior[cid] and not atual[cid]],
-        "recuperacoes": [cid for cid in comparaveis if not anterior[cid] and atual[cid]],
+        "regressoes": [cid for cid in mudou if not atual[cid] and cid not in vermelhos_esperados],
+        "recuperacoes": [cid for cid in mudou if atual[cid] and cid not in vermelhos_esperados],
+        "vermelho_esperado_mudou": [cid for cid in mudou if cid in vermelhos_esperados],
         "sem_base": len(atual) - len(comparaveis),
     }
 
@@ -231,6 +240,8 @@ def imprimir_delta(delta: dict | None) -> None:
         print(f"  regrediram:  {', '.join(delta['regressoes'])}")
     if delta["recuperacoes"]:
         print(f"  recuperaram: {', '.join(delta['recuperacoes'])}")
+    if delta["vermelho_esperado_mudou"]:
+        print(f"  vermelho esperado mudou: {', '.join(delta['vermelho_esperado_mudou'])}")
     if delta["sem_base"]:
         print(f"  ({delta['sem_base']} caso(s) sem rodada anterior, fora da comparação)")
 
@@ -556,7 +567,9 @@ def main(argv=None) -> int:
     # estrito (todas têm de passar), e misturar os dois tornaria o delta
     # incomparável.
     anterior = carregar_ultima()
-    delta = calcular_delta(anterior, resultados)
+    delta = calcular_delta(
+        anterior, resultados, {cid for cid, c in por_id.items() if c.get("esperado_vermelho")}
+    )
     imprimir_delta(delta)
     if args.repeticoes == 1:
         gravar_ultima(anterior, resultados)

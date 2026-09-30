@@ -174,6 +174,9 @@ class RelatorioAoVivo:
             if d["recuperacoes"]:
                 partes.append('<div class="nomes recuperou"><span>recuperaram</span>' + "".join(
                     f"<code>{_e(c)}</code>" for c in d["recuperacoes"]) + "</div>")
+            if d.get("vermelho_esperado_mudou"):
+                partes.append('<div class="nomes esperado-mudou"><span>vermelho esperado mudou</span>' + "".join(
+                    f"<code>{_e(c)}</code>" for c in d["vermelho_esperado_mudou"]) + "</div>")
         return f'<section class="delta" id="delta"><div class="rotulo">Delta contra a rodada anterior</div>{"".join(partes)}</section>'
 
     def _cartao(self, caso_id: str) -> str:
@@ -267,6 +270,7 @@ h1 { margin:6px 0 4px; font-size:44px; font-weight:800; letter-spacing:-.02em; }
 .nomes span { color:var(--cinza); font-size:17px; margin-right:6px; }
 .nomes code { background:#fff; padding:6px 12px; font-size:19px; border:2px solid var(--vermelho); color:var(--vermelho); }
 .nomes.recuperou code { border-color:var(--verde); color:var(--verde); }
+.nomes.esperado-mudou code { border:2px dashed #8A5A5C; color:#8A5A5C; }
 .aviso { background:#fff; padding:10px 14px; margin-bottom:12px; color:#8A5A00; border-left:6px solid #D8A300; }
 .grade { display:grid; grid-template-columns:repeat(auto-fill, minmax(560px, 1fr)); gap:18px; padding:20px 48px 60px; }
 .cartao { background:var(--caixa); padding:18px 22px; border-top:8px solid #D6D6D6; }
