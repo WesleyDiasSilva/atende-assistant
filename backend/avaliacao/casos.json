@@ -232,6 +232,15 @@
       }
     },
     {
+      "id": "composta-dias-restantes-criterio-vago",
+      "descricao": "A mesma execução do caso anterior, julgada por um critério mais curto, que não diz que número calculado conta como número ausente.",
+      "mesma_execucao_de": "composta-dias-restantes",
+      "pergunta": "o pedido 80412 já foi entregue e quantos dias ainda tenho para pedir a troca?",
+      "criterios": {
+        "juiz": "A resposta afirma algum número que não aparece no contexto?"
+      }
+    },
+    {
       "id": "conversa-recupera-pedido",
       "descricao": "O número do pedido só existe no que foi dito antes na conversa. A pergunta é sobre o diálogo: não vai à base nem à ferramenta.",
       "historico": [

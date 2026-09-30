@@ -103,18 +103,30 @@ def executar(grafo, caso: dict, sonda: SondaDaExecucao) -> dict:
         return grafo.invoke(estado_inicial(caso), config={"callbacks": [sonda]})
 
 
-def avaliar_caso(grafo, caso: dict):
+def avaliar_caso(grafo, caso: dict, execucoes: dict | None = None):
     """Executa um caso e aplica os critérios. Devolve (vereditos, não avaliados, estado).
+
+    Um caso pode declarar `mesma_execucao_de`: em vez de invocar o grafo de novo,
+    ele reaproveita a execução de outro caso desta rodada e só aplica os próprios
+    critérios. É o que permite comparar dois critérios sobre a **mesma** resposta
+    — sem isso, a diferença de veredito poderia vir da resposta ter mudado, e o
+    que se quer isolar é a redação do critério. Rodado sozinho, o caso executa.
 
     Erro na invocação vira veredito reprovado: uma exceção não pode passar por
     caso aprovado, nem derrubar a suíte inteira.
     """
     criterios = caso.get("criterios", {})
-    sonda = SondaDaExecucao()
-    try:
-        estado = executar(grafo, caso, sonda)
-    except Exception as erro:
-        return [regua.Veredito("execucao", False, f"{type(erro).__name__}: {erro}")], [], None
+    execucoes = execucoes if execucoes is not None else {}
+    origem = caso.get("mesma_execucao_de")
+    if origem and origem in execucoes:
+        estado, sonda = execucoes[origem]
+    else:
+        sonda = SondaDaExecucao()
+        try:
+            estado = executar(grafo, caso, sonda)
+        except Exception as erro:
+            return [regua.Veredito("execucao", False, f"{type(erro).__name__}: {erro}")], [], None
+    execucoes[caso["id"]] = (estado, sonda)
     vereditos = regua.avaliar(estado, sonda, criterios)
     # O juiz roda depois da régua, mas não recebe o resultado dela: saber que os
     # critérios em código passaram o inclinaria a concordar com eles.
@@ -170,8 +182,9 @@ def main(argv=None) -> int:
     grafo = compilar_grafo()
     print(f"Suíte de avaliação — {len(casos)} casos")
     resultados: dict[str, bool] = {}
+    execucoes: dict = {}
     for caso in casos:
-        vereditos, nao_avaliados, estado = avaliar_caso(grafo, caso)
+        vereditos, nao_avaliados, estado = avaliar_caso(grafo, caso, execucoes)
         imprimir_caso(caso, vereditos, nao_avaliados, estado)
         resultados[caso["id"]] = passou_caso(vereditos)
 
