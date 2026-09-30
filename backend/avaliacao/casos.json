@@ -61,6 +61,8 @@
       "entradas": {
         "modo": "sem_conhecimento"
       },
+      "esperado_vermelho": true,
+      "motivo_do_vermelho": "Sem documento no contexto, o modelo afirma um prazo de 30 dias, que não é o da loja. É o que a base de conhecimento existe para impedir.",
       "criterios": {
         "nao_passa_por": [
           "recuperar"
@@ -121,6 +123,8 @@
       "id": "preparo-e-assunto-da-loja",
       "descricao": "A instrução da triagem lista preparo de produto como assunto da loja, com essa palavra.",
       "pergunta": "como preparo a picanha?",
+      "esperado_vermelho": true,
+      "motivo_do_vermelho": "A triagem manda preparo de produto para fora de escopo, contra a própria instrução, que lista preparo como assunto da loja. Medido 3 de 3.",
       "criterios": {
         "escopo": "atendimento",
         "nao_passa_por": [
@@ -230,6 +234,8 @@
       "descricao": "O pedido 80412 foi entregue há 2 dias e o prazo de troca é 7. As duas partes trazem esses dois números; nenhuma diz quantos dias restam. A instrução da junção proíbe acrescentar informação.",
       "rapido": true,
       "pergunta": "o pedido 80412 já foi entregue e quantos dias ainda tenho para pedir a troca?",
+      "esperado_vermelho": true,
+      "motivo_do_vermelho": "A junção calcula os dias restantes e afirma um número que nenhuma das partes trouxe, contra a instrução de não acrescentar informação.",
       "criterios": {
         "escopo": "composta",
         "ramos": true,
@@ -310,6 +316,8 @@
       "id": "seguimento-maiuscula",
       "descricao": "A mesma pergunta do caso anterior, só com a primeira letra maiúscula. O desempate é o mesmo.",
       "pergunta": "E o pedido?",
+      "esperado_vermelho": true,
+      "motivo_do_vermelho": "Com a primeira letra maiúscula, a triagem classifica a mesma pergunta como conversacional. Medido 3 de 3 nos dois sentidos: não é oscilação, é uma regra que ninguém escreveu.",
       "criterios": {
         "escopo": "atendimento"
       }

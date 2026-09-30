@@ -10,6 +10,13 @@ aí o que se mede já não é o sistema de antes. A saída é a mesma porta que 
 tracing usa: um **callback** no config do `invoke()`. O config se propaga para
 dentro de cada node, inclusive dos que rodam em paralelo, e o callback recebe o
 aviso de cada ferramenta que começa e termina, com nome, argumentos e resultado.
+
+O mesmo callback resolve um segundo problema: o fluxo engole a falha do Bedrock
+e devolve uma resposta normal com o texto do erro — é o que ele deve fazer com o
+cliente. Para a suíte isso é um perigo: um limite de requisições no meio da
+rodada viraria "FALHOU" e sujaria o delta com uma regressão que o sistema não
+teve. O callback é avisado de toda chamada ao modelo que falhou, mesmo as que o
+fluxo tratou, e a suíte separa o caso como não avaliado.
 """
 from __future__ import annotations
 
@@ -27,6 +34,7 @@ class SondaDaExecucao(BaseCallbackHandler):
 
     def __init__(self) -> None:
         self.ferramentas: list[dict] = []
+        self.erros: list[str] = []
         self._em_andamento: dict = {}
 
     def on_tool_start(self, serialized, input_str, *, run_id, inputs=None, **kwargs):
@@ -43,6 +51,29 @@ class SondaDaExecucao(BaseCallbackHandler):
         registro = self._em_andamento.pop(run_id, None)
         if registro is not None:
             registro["saida"] = str(getattr(output, "content", output))
+
+    def on_llm_error(self, error, **kwargs):
+        self.erros.append(f"{type(error).__name__}: {error}")
+
+
+def falha_de_infraestrutura(estado: dict | None, sonda: SondaDaExecucao) -> str | None:
+    """Por que esta execução não mediu o sistema — ou `None`, se mediu.
+
+    Duas causas: uma chamada ao modelo falhou durante o caso (limite de
+    requisições, rede, credencial), ou a busca não devolveu trecho nenhum num
+    modo de busca. A base conhecida tem dezenas de trechos e a busca devolve
+    sempre `k` deles: lista vazia ali é banco fora do ar, não resposta do sistema.
+    """
+    if sonda.erros:
+        return sonda.erros[0]
+    if estado is None:
+        return None
+    buscou = "recuperar" in (estado.get("trajetoria") or []) or "ramo_da_regra" in (
+        estado.get("trajetoria") or []
+    )
+    if buscou and estado.get("modo") in ("rag", "rag_gerenciado") and not estado.get("trechos"):
+        return "a busca não devolveu trecho nenhum: base fora do ar ou vazia"
+    return None
 
 
 def _ler_argumentos(texto: str) -> dict:

@@ -31,7 +31,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
+import time
 from pathlib import Path
 
 from langchain_core.messages import AIMessage, HumanMessage
@@ -39,7 +41,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 from app.grafo import ESTADO_DO_TURNO, compilar_grafo
 from avaliacao import juiz, plataforma, regua
 from avaliacao.isolamento import fila_isolada
-from avaliacao.sondas import SondaDaExecucao
+from avaliacao.sondas import SondaDaExecucao, falha_de_infraestrutura
 
 CASOS_PATH = Path(__file__).resolve().parent / "casos.json"
 
@@ -51,6 +53,16 @@ RECONHECIDOS = set(regua.CRITERIOS) | {juiz.CRITERIO}
 # Resultado da última rodada, base de comparação do delta. Fica fora do git: é
 # estado local de quem roda a suíte, não conteúdo do projeto.
 ULTIMA_PATH = Path(__file__).resolve().parent / ".ultima-rodada.json"
+
+# Pausa entre casos, em segundos. O Bedrock limita requisições por minuto, e uma
+# suíte é uma rajada: a pergunta composta sozinha faz quatro chamadas, duas
+# delas em paralelo.
+PAUSA_ENTRE_CASOS = float(os.getenv("AVALIACAO_PAUSA", "2.0"))
+
+# Quantas vezes um caso é executado de novo quando a execução falhou por
+# infraestrutura, e a espera antes de cada nova tentativa. Esgotadas, o caso sai
+# como não avaliado — nunca como reprovado.
+NOVAS_TENTATIVAS = (10, 25)
 
 # Largura da coluna do nome do caso, para o veredito ficar alinhado.
 COLUNA = 44
@@ -197,8 +209,8 @@ def executar(grafo, caso: dict, sonda: SondaDaExecucao) -> tuple[dict, str | Non
     return estado, getattr(handler, "last_trace_id", None)
 
 
-def avaliar_caso(grafo, caso: dict, execucoes: dict | None = None):
-    """Executa um caso e aplica os critérios. Devolve (vereditos, não avaliados, estado).
+def avaliar_caso(grafo, caso: dict, execucoes: dict | None = None) -> dict:
+    """Executa um caso e aplica os critérios. Devolve o resultado do caso.
 
     Um caso pode declarar `mesma_execucao_de`: em vez de invocar o grafo de novo,
     ele reaproveita a execução de outro caso desta rodada e só aplica os próprios
@@ -206,35 +218,79 @@ def avaliar_caso(grafo, caso: dict, execucoes: dict | None = None):
     — sem isso, a diferença de veredito poderia vir da resposta ter mudado, e o
     que se quer isolar é a redação do critério. Rodado sozinho, o caso executa.
 
+    Execução que falhou por infraestrutura é refeita (`NOVAS_TENTATIVAS`) e, se
+    continuar falhando, o caso volta com `infraestrutura` preenchido e nenhum
+    veredito: não mediu o sistema, então não aprova nem reprova.
+
     Erro na invocação vira veredito reprovado: uma exceção não pode passar por
     caso aprovado, nem derrubar a suíte inteira.
     """
     criterios = caso.get("criterios", {})
     execucoes = execucoes if execucoes is not None else {}
+    resultado = {"caso": caso, "vereditos": [], "nao_avaliados": [], "estado": None, "infraestrutura": None}
     origem = caso.get("mesma_execucao_de")
     reaproveitado = bool(origem and origem in execucoes)
     if reaproveitado:
-        estado, sonda, trace_id = execucoes[origem]
+        estado, sonda, trace_id, infra = execucoes[origem]
     else:
-        sonda = SondaDaExecucao()
-        try:
-            estado, trace_id = executar(grafo, caso, sonda)
-        except Exception as erro:
-            return [regua.Veredito("execucao", False, f"{type(erro).__name__}: {erro}")], [], None
-    execucoes[caso["id"]] = (estado, sonda, trace_id)
+        esperas = iter(NOVAS_TENTATIVAS)
+        while True:
+            sonda = SondaDaExecucao()
+            try:
+                estado, trace_id = executar(grafo, caso, sonda)
+            except Exception as erro:
+                resultado["vereditos"] = [regua.Veredito("execucao", False, f"{type(erro).__name__}: {erro}")]
+                return resultado
+            infra = falha_de_infraestrutura(estado, sonda)
+            espera = next(esperas, None) if infra else None
+            if espera is None:
+                break
+            time.sleep(espera)
+    execucoes[caso["id"]] = (estado, sonda, trace_id, infra)
+    resultado["estado"] = estado
+    if infra:
+        resultado["infraestrutura"] = infra
+        return resultado
     vereditos = regua.avaliar(estado, sonda, criterios)
     # O juiz roda depois da régua, mas não recebe o resultado dela: saber que os
     # critérios em código passaram o inclinaria a concordar com eles.
     if juiz.CRITERIO in criterios:
         vereditos.append(juiz.avaliar(caso, estado, criterios[juiz.CRITERIO]))
-    nao_avaliados = [nome for nome in criterios if nome not in RECONHECIDOS]
+    resultado["vereditos"] = vereditos
+    resultado["nao_avaliados"] = [nome for nome in criterios if nome not in RECONHECIDOS]
     plataforma.enviar_scores(trace_id, caso["id"], vereditos, reaproveitado)
-    return vereditos, nao_avaliados, estado
+    return resultado
 
 
 def passou_caso(vereditos: list[regua.Veredito]) -> bool:
-    """Um caso passa quando todo critério efetivamente medido foi aprovado."""
+    """Um caso passa quando todo critério efetivamente medido foi aprovado.
+
+    Critério não avaliado (juiz indisponível) não reprova o caso: a suíte não
+    acusa defeito no sistema por causa de um problema do avaliador.
+    """
     return all(v.ok for v in vereditos if v.avaliado)
+
+
+def rotular(caso: dict, passou: bool) -> tuple[str, bool]:
+    """O rótulo do resultado e se ele é **notícia** — diferente do declarado.
+
+    Um caso pode declarar `esperado_vermelho`: ele documenta um defeito
+    conhecido e reprova de propósito. Reprovar não é novidade nesse caso; a
+    novidade seria passar, porque o defeito descrito teria deixado de existir e
+    o caso não ensinaria mais o que diz ensinar.
+
+    É essa distinção que dá sentido ao código de saída. Sem ela, uma suíte com
+    vermelho documentado sai com 1 em toda execução, e o portão é desligado na
+    primeira semana.
+    """
+    esperado_vermelho = caso.get("esperado_vermelho", False)
+    if passou and esperado_vermelho:
+        return "PASSOU (esperava vermelho)", True
+    if passou:
+        return "passou", False
+    if esperado_vermelho:
+        return "falhou (esperado)", False
+    return "FALHOU", True
 
 
 # --- Saída -------------------------------------------------------------------
@@ -245,13 +301,19 @@ def _cabecalho(nome: str, veredito: str) -> str:
     return f"{nome} {'.' * max(3, COLUNA - len(nome))} {veredito}"
 
 
-def imprimir_caso(caso: dict, vereditos, nao_avaliados, estado) -> None:
+def imprimir_caso(resultado: dict) -> None:
+    caso, estado = resultado["caso"], resultado["estado"]
     print()
-    print(_cabecalho(caso["id"], "passou" if passou_caso(vereditos) else "FALHOU"))
-    for v in vereditos:
+    if resultado["infraestrutura"]:
+        print(_cabecalho(caso["id"], "não avaliado (infraestrutura)"))
+        print(f"  · {'motivo':<14}{resultado['infraestrutura'][:160]}")
+        return
+    rotulo, _ = rotular(caso, passou_caso(resultado["vereditos"]))
+    print(_cabecalho(caso["id"], rotulo))
+    for v in resultado["vereditos"]:
         marca = "·" if not v.avaliado else ("✓" if v.ok else "✗")
         print(f"  {marca} {v.criterio:<14}{v.detalhe}")
-    for nome in nao_avaliados:
+    for nome in resultado["nao_avaliados"]:
         print(f"  · {nome:<14}(nenhum critério com esse nome — não avaliado)")
     if estado is not None:
         print(f"  · {'caminho':<14}{' → '.join(estado.get('trajetoria') or [])}")
@@ -261,7 +323,7 @@ def imprimir_caso(caso: dict, vereditos, nao_avaliados, estado) -> None:
         print(f"  · {'groundedness':<14}{'—' if g is None else g}  (reportado, nunca decide)")
 
 
-def imprimir_repeticoes(caso: dict, rodadas: list[list[regua.Veredito]], nao_avaliados) -> None:
+def imprimir_repeticoes(caso: dict, rodadas: list[list[regua.Veredito]], nao_avaliados, sem_medida: int = 0) -> None:
     """O resultado agregado de um caso executado N vezes.
 
     Relata todo critério que reprovou em alguma rodada, separando o que reprova
@@ -270,8 +332,11 @@ def imprimir_repeticoes(caso: dict, rodadas: list[list[regua.Veredito]], nao_ava
     """
     total = len(rodadas)
     passaram = sum(1 for vereditos in rodadas if passou_caso(vereditos))
+    marca_esperado = " (vermelho esperado)" if caso.get("esperado_vermelho") else ""
     print()
-    print(_cabecalho(caso["id"], f"{passaram}/{total} passaram"))
+    print(_cabecalho(caso["id"], f"{passaram}/{total} passaram{marca_esperado}"))
+    if sem_medida:
+        print(f"  · {'infra':<14}{sem_medida} rodada(s) sem medida, fora da conta")
     por_criterio: dict[str, list[regua.Veredito]] = {}
     for vereditos in rodadas:
         for v in vereditos:
@@ -333,29 +398,57 @@ def main(argv=None) -> int:
     if plataforma.disponivel():
         print(f"LangFuse: traces e scores na sessão {plataforma.RODADA_ID}")
     resultados: dict[str, bool] = {}
+    sem_medida: list[str] = []
     if args.repeticoes > 1:
         for caso in casos:
-            rodadas, nao_avaliados = [], []
+            rodadas, nao_avaliados, infra = [], [], 0
             for _ in range(args.repeticoes):
                 # Cada repetição executa de novo, inclusive o caso que
                 # reaproveitaria outro: o que se mede aqui é a variação.
-                vereditos, nao_avaliados, _ = avaliar_caso(grafo, {**caso, "mesma_execucao_de": None})
-                rodadas.append(vereditos)
-            imprimir_repeticoes(caso, rodadas, nao_avaliados)
-            resultados[caso["id"]] = all(passou_caso(r) for r in rodadas)
+                r = avaliar_caso(grafo, {**caso, "mesma_execucao_de": None})
+                if r["infraestrutura"]:
+                    infra += 1
+                else:
+                    rodadas.append(r["vereditos"])
+                    nao_avaliados = r["nao_avaliados"]
+                time.sleep(PAUSA_ENTRE_CASOS)
+            imprimir_repeticoes(caso, rodadas, nao_avaliados, infra)
+            if rodadas:
+                resultados[caso["id"]] = all(passou_caso(r) for r in rodadas)
+            else:
+                sem_medida.append(caso["id"])
     else:
         execucoes: dict = {}
         for caso in casos:
-            vereditos, nao_avaliados, estado = avaliar_caso(grafo, caso, execucoes)
-            imprimir_caso(caso, vereditos, nao_avaliados, estado)
-            resultados[caso["id"]] = passou_caso(vereditos)
+            r = avaliar_caso(grafo, caso, execucoes)
+            imprimir_caso(r)
+            if r["infraestrutura"]:
+                sem_medida.append(caso["id"])
+            else:
+                resultados[caso["id"]] = passou_caso(r["vereditos"])
+            time.sleep(PAUSA_ENTRE_CASOS)
 
+    por_id = {c["id"]: c for c in casos}
     reprovados = [cid for cid, ok in resultados.items() if not ok]
+    vermelhos_esperados = [cid for cid in reprovados if por_id[cid].get("esperado_vermelho")]
+    inesperados = [cid for cid in reprovados if cid not in vermelhos_esperados]
+    # Notícia = resultado diferente do declarado no caso: o que era verde
+    # reprovou, ou o vermelho documentado deixou de reprovar. É o que o código de
+    # saída sinaliza.
+    noticias = [cid for cid, ok in resultados.items() if rotular(por_id[cid], ok)[1]]
+    passou_o_que_devia_falhar = [cid for cid in noticias if resultados[cid]]
+
     print()
     print("─" * (COLUNA + 12))
-    print(f"{len(casos) - len(reprovados)}/{len(casos)} casos passaram")
-    if reprovados:
-        print(f"reprovados: {', '.join(reprovados)}")
+    print(f"{len(resultados) - len(reprovados)}/{len(resultados)} casos passaram")
+    if vermelhos_esperados:
+        print(f"vermelhos esperados: {', '.join(vermelhos_esperados)}")
+    if inesperados:
+        print(f"reprovados: {', '.join(inesperados)}")
+    if passou_o_que_devia_falhar:
+        print(f"passaram mas eram vermelho esperado: {', '.join(passou_o_que_devia_falhar)}")
+    if sem_medida:
+        print(f"não avaliados (infraestrutura): {', '.join(sem_medida)}")
 
     # Regressão se mede contra a rodada anterior, não contra um número absoluto.
     # Só a execução única alimenta a base: com repetições o critério é mais
@@ -373,7 +466,14 @@ def main(argv=None) -> int:
         print(f"LangFuse: {len(falhas_plataforma)} falha(s) de envio")
         for f in falhas_plataforma[:5]:
             print(f"  {f}")
-    return 1 if reprovados else 0
+
+    # 1: há notícia — o sistema mudou em relação ao que os casos declaram.
+    # 2: nada mudou no que foi medido, mas parte não pôde ser medida; um portão
+    #    de integração não deve deixar passar uma rodada que não mediu tudo.
+    # 0: tudo como declarado.
+    if noticias:
+        return 1
+    return 2 if sem_medida else 0
 
 
 if __name__ == "__main__":
