@@ -113,6 +113,34 @@ def estado_inicial(caso: dict) -> dict:
     }
 
 
+def verificar_base(esperada: dict) -> list[str]:
+    """Confere a base vetorial contra o estado declarado em casos.json.
+
+    Uma suíte sem estado conhecido não mede nada: com um documento a menos, a
+    resposta muda, e o vermelho fica ambíguo entre defeito do sistema e base
+    diferente. Conferir antes troca esse vermelho ambíguo por uma mensagem que
+    diz o que está diferente. Devolve as divergências; vazio quando está igual.
+    """
+    from app import retrieval
+
+    indexados = retrieval.contar_por_arquivo()
+    if not indexados:
+        return ["a base vetorial está vazia ou o banco não respondeu"]
+    divergencias: list[str] = []
+    esperados = esperada.get("arquivos", [])
+    faltando = [a for a in esperados if a not in indexados]
+    sobrando = [a for a in indexados if a not in esperados]
+    if faltando:
+        divergencias.append(f"documentos ausentes da base: {', '.join(faltando)}")
+    if sobrando:
+        divergencias.append(f"documentos a mais na base: {', '.join(sobrando)}")
+    chunks_esperados = esperada.get("chunks")
+    chunks_atuais = sum(indexados.values())
+    if chunks_esperados is not None and chunks_atuais != chunks_esperados:
+        divergencias.append(f"chunks: esperado {chunks_esperados}, encontrado {chunks_atuais}")
+    return divergencias
+
+
 def selecionar(casos: list[dict], ids: str | None, rapido: bool) -> list[dict]:
     """Aplica os filtros de seleção, que compõem entre si.
 
@@ -381,15 +409,40 @@ def parse_args(argv=None):
         "--repeticoes", type=int, default=1,
         help="Executa cada caso N vezes e reporta quantas passaram (expõe oscilação).",
     )
+    p.add_argument(
+        "--ignorar-base", dest="ignorar_base", action="store_true",
+        help="Mede mesmo com a base fora do estado esperado, só avisando.",
+    )
     return p.parse_args(argv)
 
 
 def main(argv=None) -> int:
     args = parse_args(argv)
-    casos = selecionar(carregar_dados()["casos"], args.caso, args.rapido)
+    dados_da_suite = carregar_dados()
+    casos = selecionar(dados_da_suite["casos"], args.caso, args.rapido)
     if not casos:
         print("Nenhum caso corresponde à seleção.")
         return 1
+
+    # Pré-condição: a base tem de estar no estado que os casos pressupõem.
+    divergencias = verificar_base(dados_da_suite.get("base_esperada") or {})
+    if divergencias and not args.ignorar_base:
+        print("A base vetorial não está no estado que os casos pressupõem:")
+        for d in divergencias:
+            print(f"  {d}")
+        print()
+        print("Restaure a base antes de medir:")
+        print("  documento ausente: devolva o .md a dados/base (git checkout, ou reenvie")
+        print("  pelo painel da base de conhecimento) e reindexe:")
+        print("    docker compose exec backend python -m scripts.indexar_base")
+        print("  documento a mais: remova pelo painel da base de conhecimento")
+        print()
+        print("Ou rode com --ignorar-base para medir mesmo assim.")
+        return 2
+    if divergencias:
+        print("AVISO: base fora do estado esperado, medindo mesmo assim:")
+        for d in divergencias:
+            print(f"  {d}")
 
     grafo = compilar_grafo()
     escopo = "conjunto rápido" if args.rapido else f"{len(casos)} casos"
