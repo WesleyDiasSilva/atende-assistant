@@ -164,7 +164,7 @@
       "descricao": "A instrução da triagem lista preparo de produto como assunto da loja, com essa palavra.",
       "pergunta": "como preparo a picanha?",
       "esperado_vermelho": true,
-      "motivo_do_vermelho": "A triagem manda preparo de produto para fora de escopo, contra a própria instrução, que lista preparo como assunto da loja. Medido 3 de 3.",
+      "motivo_do_vermelho": "A triagem manda preparo de produto para fora de escopo, contra a própria instrução, que lista preparo como assunto da loja. Medido 5 de 5.",
       "criterios": {
         "escopo": "atendimento",
         "nao_passa_por": [
@@ -357,7 +357,7 @@
       "descricao": "A mesma pergunta do caso anterior, só com a primeira letra maiúscula. O desempate é o mesmo.",
       "pergunta": "E o pedido?",
       "esperado_vermelho": true,
-      "motivo_do_vermelho": "Com a primeira letra maiúscula, a triagem classifica a mesma pergunta como conversacional. Medido 3 de 3 nos dois sentidos: não é oscilação, é uma regra que ninguém escreveu.",
+      "motivo_do_vermelho": "Com a primeira letra maiúscula, a triagem classifica a mesma pergunta como conversacional. Medido 5 de 5 nos dois sentidos: não é oscilação, é uma regra que ninguém escreveu.",
       "criterios": {
         "escopo": "atendimento"
       }

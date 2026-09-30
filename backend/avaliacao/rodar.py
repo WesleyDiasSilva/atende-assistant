@@ -276,7 +276,9 @@ def avaliar_caso(grafo, caso: dict, execucoes: dict | None = None) -> dict:
     veredito: não mediu o sistema, então não aprova nem reprova.
 
     Erro na invocação vira veredito reprovado: uma exceção não pode passar por
-    caso aprovado, nem derrubar a suíte inteira.
+    caso aprovado, nem derrubar a suíte inteira. A exceção é, ao contrário,
+    infraestrutura quando uma chamada ao modelo falhou antes dela. E o juiz que
+    não responde depois das novas tentativas também deixa o caso sem medida.
     """
     criterios = caso.get("criterios", {})
     execucoes = execucoes if execucoes is not None else {}
@@ -292,9 +294,15 @@ def avaliar_caso(grafo, caso: dict, execucoes: dict | None = None) -> dict:
             try:
                 estado, trace_id = executar(grafo, caso, sonda)
             except Exception as erro:
-                resultado["vereditos"] = [regua.Veredito("execucao", False, f"{type(erro).__name__}: {erro}")]
-                return resultado
-            infra = falha_de_infraestrutura(estado, sonda)
+                # Exceção com chamada ao modelo falhando antes dela é o provedor
+                # fora do ar (rede, tempo esgotado), não defeito do sistema.
+                if not sonda.erros:
+                    resultado["vereditos"] = [regua.Veredito("execucao", False, f"{type(erro).__name__}: {erro}")]
+                    return resultado
+                estado, trace_id = None, None
+                infra = f"{type(erro).__name__}: {erro}"
+            else:
+                infra = falha_de_infraestrutura(estado, sonda)
             espera = next(esperas, None) if infra else None
             if espera is None:
                 break
@@ -308,20 +316,38 @@ def avaliar_caso(grafo, caso: dict, execucoes: dict | None = None) -> dict:
     # O juiz roda depois da régua, mas não recebe o resultado dela: saber que os
     # critérios em código passaram o inclinaria a concordar com eles.
     if juiz.CRITERIO in criterios:
-        vereditos.append(juiz.avaliar(caso, estado, criterios[juiz.CRITERIO]))
+        veredito_do_juiz = julgar_com_novas_tentativas(caso, estado, criterios[juiz.CRITERIO])
+        if not veredito_do_juiz.avaliado:
+            # Sem o veredito do juiz o caso não foi medido: contar os outros
+            # critérios como o caso inteiro daria um verde que ninguém mediu.
+            resultado["infraestrutura"] = veredito_do_juiz.detalhe
+            return resultado
+        vereditos.append(veredito_do_juiz)
     resultado["vereditos"] = vereditos
     resultado["nao_avaliados"] = [nome for nome in criterios if nome not in RECONHECIDOS]
     plataforma.enviar_scores(trace_id, caso["id"], vereditos, reaproveitado)
     return resultado
 
 
-def passou_caso(vereditos: list[regua.Veredito]) -> bool:
-    """Um caso passa quando todo critério efetivamente medido foi aprovado.
+def julgar_com_novas_tentativas(caso: dict, estado: dict, criterio: str) -> regua.Veredito:
+    """Chama o juiz, refazendo com as mesmas esperas da execução se ele falhar."""
+    esperas = iter(NOVAS_TENTATIVAS)
+    while True:
+        veredito = juiz.avaliar(caso, estado, criterio)
+        espera = None if veredito.avaliado else next(esperas, None)
+        if espera is None:
+            return veredito
+        time.sleep(espera)
 
-    Critério não avaliado (juiz indisponível) não reprova o caso: a suíte não
-    acusa defeito no sistema por causa de um problema do avaliador.
+
+def passou_caso(vereditos: list[regua.Veredito]) -> bool:
+    """Um caso passa quando mediu alguma coisa e todo critério medido foi aprovado.
+
+    Sem nenhum critério medido não há o que aprovar: `all()` de uma lista vazia
+    é verdadeiro, e seria um verde que ninguém mediu.
     """
-    return all(v.ok for v in vereditos if v.avaliado)
+    medidos = [v for v in vereditos if v.avaliado]
+    return bool(medidos) and all(v.ok for v in medidos)
 
 
 def rotular(caso: dict, passou: bool) -> tuple[str, bool]:
@@ -330,7 +356,7 @@ def rotular(caso: dict, passou: bool) -> tuple[str, bool]:
     Um caso pode declarar `esperado_vermelho`: ele documenta um defeito
     conhecido e reprova de propósito. Reprovar não é novidade nesse caso; a
     novidade seria passar, porque o defeito descrito teria deixado de existir e
-    o caso não ensinaria mais o que diz ensinar.
+    o caso não documentaria mais o que diz documentar.
 
     É essa distinção que dá sentido ao código de saída. Sem ela, uma suíte com
     vermelho documentado sai com 1 em toda execução, e o portão é desligado na
